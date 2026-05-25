@@ -1,0 +1,30 @@
+weak_terms:
+  - improve
+  - optimize
+  - enhance
+  - support
+  - manage
+  - handle
+  - fix
+  - refactor
+  - robust
+  - flexible
+  - efficient
+  - clean
+  - better
+  - properly
+  - stabilize
+  - harden
+  - simplify
+  - modernize
+
+rules:
+  weak_action_without_metric:
+    severity: high
+    score: 10
+  broad_scope_operation:
+    severity: medium
+    score: 6
+  undefined_operational_behavior:
+    severity: high
+    score: 10

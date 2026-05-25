@@ -1,0 +1,32 @@
+vague_temporal_terms:
+  - soon
+  - later
+  - eventually
+  - periodically
+  - if needed
+  - when appropriate
+  - as required
+  - temporarily
+  - after some time
+  - from time to time
+
+ordering_keywords:
+  - before
+  - after
+  - then
+  - prior to
+  - following
+  - once
+  - until
+  - during
+
+rules:
+  vague_temporal_without_interval:
+    severity: medium
+    score: 8
+  periodic_without_interval:
+    severity: high
+    score: 10
+  undefined_trigger:
+    severity: medium
+    score: 6

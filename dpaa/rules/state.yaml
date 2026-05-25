@@ -1,0 +1,16 @@
+rules:
+  missing_required_state_producer:
+    severity: critical
+    score: 20
+  cyclic_dependency:
+    severity: critical
+    score: 25
+  missing_rollback:
+    severity: high
+    score: 10
+  unreachable_state:
+    severity: medium
+    score: 5
+  missing_precondition:
+    severity: high
+    score: 10

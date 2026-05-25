@@ -1,0 +1,37 @@
+acceptance_triggers:
+  - pass if
+  - acceptance
+  - must
+  - should
+
+threshold_patterns:
+  - "<"
+  - ">"
+  - "<="
+  - ">="
+  - at most
+  - at least
+  - no more than
+  - within
+  - below
+  - above
+
+test_method_patterns:
+  - test
+  - benchmark
+  - simulate
+  - verify
+  - assert
+  - run
+  - execute
+
+rules:
+  missing_threshold:
+    severity: high
+    score: 10
+  missing_test_method:
+    severity: medium
+    score: 6
+  missing_metric:
+    severity: high
+    score: 10

@@ -1,0 +1,30 @@
+pronouns:
+  - it
+  - this
+  - that
+  - they
+  - them
+  - these
+  - those
+
+vague_entities:
+  - component
+  - module
+  - system
+  - service
+  - handler
+  - processor
+  - manager
+  - controller
+  - thing
+  - part
+  - logic
+  - flow
+
+rules:
+  unresolved_pronoun:
+    severity: high
+    score: 10
+  vague_entity:
+    severity: medium
+    score: 5

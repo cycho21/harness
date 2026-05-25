@@ -1,0 +1,42 @@
+profiles:
+  default:
+    weights:
+      structural: 0.15
+      syntactic: 0.10
+      referential: 0.15
+      temporal: 0.15
+      execution: 0.20
+      verification: 0.15
+      state: 0.10
+    thresholds:
+      pass: 20
+      warn: 50
+    required_sections: default
+
+  strict:
+    weights:
+      structural: 0.15
+      syntactic: 0.08
+      referential: 0.12
+      temporal: 0.15
+      execution: 0.25
+      verification: 0.15
+      state: 0.10
+    thresholds:
+      pass: 10
+      warn: 30
+    required_sections: strict
+
+  minimal:
+    weights:
+      structural: 0.20
+      syntactic: 0.10
+      referential: 0.10
+      temporal: 0.10
+      execution: 0.25
+      verification: 0.15
+      state: 0.10
+    thresholds:
+      pass: 30
+      warn: 60
+    required_sections: minimal

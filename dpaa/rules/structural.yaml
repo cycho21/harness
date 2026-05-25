@@ -1,0 +1,44 @@
+required_sections:
+  default:
+    - Goal
+    - Steps
+    - Acceptance Criteria
+    - Rollback
+  strict:
+    - Goal
+    - Scope
+    - Non-Goals
+    - Constraints
+    - Assumptions
+    - Steps
+    - Acceptance Criteria
+    - Rollback
+    - Failure Conditions
+  minimal:
+    - Goal
+    - Steps
+
+placeholder_terms:
+  - TODO
+  - FIXME
+  - TBD
+  - XXX
+  - placeholder
+  - fill this
+
+rules:
+  missing_required_section:
+    severity: high
+    score: 10
+  empty_section:
+    severity: medium
+    score: 5
+  placeholder_found:
+    severity: high
+    score: 8
+  invalid_heading_hierarchy:
+    severity: low
+    score: 2
+  duplicate_step_id:
+    severity: critical
+    score: 20

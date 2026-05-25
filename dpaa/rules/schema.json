@@ -1,0 +1,20 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["rules"],
+  "properties": {
+    "terms": {"type": "array", "items": {"type": "string"}},
+    "required_sections": {"type": "object"},
+    "rules": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["severity", "score"],
+        "properties": {
+          "severity": {"type": "string", "enum": ["low","medium","high","critical"]},
+          "score": {"type": "integer", "minimum": 0, "maximum": 100}
+        }
+      }
+    }
+  }
+}
