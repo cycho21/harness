@@ -40,7 +40,7 @@ class TemporalLayer(LayerAnalyzer):
                                 layer=self.LAYER_NAME,
                                 rule=rule,
                                 severity=rules["rules"][rule]["severity"],
-                                line=line_no,
+                                line=section.line_start + line_no,
                                 text=sentence,
                                 message=f"Temporal term '{term}' has no exact interval or condition.",
                                 score=rules["rules"][rule]["score"],

@@ -35,11 +35,10 @@ def lint(
     ]
 
     if syntactic:
-        try:
-            from dpaa.layers.syntactic import SyntacticLayer
-            analyzers.insert(1, SyntacticLayer())
-        except ImportError:
-            typer.echo("Warning: stanza not installed. Skipping L2. Run: pip install dpaa[syntactic]")
+        from dpaa.layers.syntactic import SyntacticLayer, _STANZA_AVAILABLE
+        analyzers.insert(1, SyntacticLayer())
+        if not _STANZA_AVAILABLE:
+            typer.echo("Warning: stanza not installed; syntactic checks use regex heuristics only.", err=True)
 
     layer_results = [a.analyze(doc) for a in analyzers]
     report = Scorer(profile=profile).compute(str(plan), layer_results)

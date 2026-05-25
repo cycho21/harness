@@ -43,7 +43,7 @@ class ExecutionLayer(LayerAnalyzer):
                         layer=self.LAYER_NAME,
                         rule="weak_action_without_metric",
                         severity=severity,
-                        line=line_no,
+                        line=section.line_start + line_no,
                         text=sentence,
                         message="Weak action term without measurable metric.",
                         score=score,

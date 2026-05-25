@@ -11,6 +11,7 @@ steps:
     target: plan_document
     produces:
       - PLAN_APPROVED
+    rollback: Discard review notes and restart.
 
   - id: IMPLEMENT
     action: implement
@@ -19,6 +20,7 @@ steps:
       - PLAN_APPROVED
     produces:
       - PATCH_CREATED
+    rollback: Delete working branch and revert local changes.
 
   - id: MERGE
     action: merge
@@ -27,6 +29,7 @@ steps:
       - PATCH_CREATED
     produces:
       - MERGED
+    rollback: Revert merge commit and notify team.
 ```
 
 # Acceptance Criteria

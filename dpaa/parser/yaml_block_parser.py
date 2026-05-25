@@ -2,7 +2,7 @@ from __future__ import annotations
 import re
 import yaml
 
-YAML_BLOCK_RE = re.compile(r"```yaml\n(.*?)```", re.DOTALL)
+YAML_BLOCK_RE = re.compile(r"```yaml\r?\n(.*?)```", re.DOTALL)
 
 
 class YamlBlockParser:

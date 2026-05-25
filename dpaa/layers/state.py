@@ -48,7 +48,7 @@ class StateLayer(LayerAnalyzer):
                 else:
                     graph.add_edge(produced[req], step_id)
 
-            if not step.get("rollback") and not step.get("produces"):
+            if not step.get("rollback"):
                 findings.append(Finding(
                     layer=self.LAYER_NAME,
                     rule="missing_rollback",

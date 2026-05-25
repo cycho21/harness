@@ -54,7 +54,7 @@ class ReferentialLayer(LayerAnalyzer):
                                 layer=self.LAYER_NAME,
                                 rule="unresolved_pronoun",
                                 severity="high",
-                                line=line_no,
+                                line=section.line_start + line_no,
                                 text=sentence,
                                 message=f"Pronoun '{pronoun}' has no clear antecedent.",
                                 score=10,
