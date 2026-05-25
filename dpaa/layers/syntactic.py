@@ -12,7 +12,11 @@ try:
 except (ImportError, ModuleNotFoundError):
     _STANZA_AVAILABLE = False
 
-_PASSIVE_RE = re.compile(r'\b(is|are|was|were|be|been|being)\s+\w+ed\b', re.IGNORECASE)
+_PASSIVE_RE = re.compile(
+    r'\b(?:is|are|was|were|be|been|being)\s+\w{1,50}ed\b',
+    re.IGNORECASE,
+)
+_BY_AGENT_RE = re.compile(r'\bby\b', re.IGNORECASE)
 _COORD_RE = re.compile(r'\b(and|or)\b', re.IGNORECASE)
 
 
@@ -47,7 +51,7 @@ def _check_multiple_subjects(layer: str, line: int, sentence: str) -> Finding | 
 
 
 def _check_passive_voice(layer: str, line: int, sentence: str) -> Finding | None:
-    if _PASSIVE_RE.search(sentence) and "by " not in sentence.lower():
+    if _PASSIVE_RE.search(sentence) and not _BY_AGENT_RE.search(sentence):
         return Finding(
             layer=layer,
             rule="passive_voice_without_agent",
@@ -66,10 +70,7 @@ class SyntacticLayer(LayerAnalyzer):
     WARN_ONLY = True
 
     def analyze(self, doc: PlanDocument) -> LayerResult:
-        try:
-            return self._analyze_impl(doc)
-        except (ImportError, ModuleNotFoundError):
-            return LayerResult(layer=self.LAYER_NAME, score=0, findings=())
+        return self._analyze_impl(doc)
 
     def _analyze_impl(self, doc: PlanDocument) -> LayerResult:
         findings: list[Finding] = []
