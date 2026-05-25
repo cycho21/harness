@@ -96,3 +96,22 @@ duplicate_step_id:
   title: "Duplicate step ID"
   fix: |
     Each step ID must be unique within the document.
+
+long_sentence:
+  title: "Sentence too long"
+  fix: |
+    Break the sentence into shorter, single-concern sentences (≤40 words).
+    Each sentence should express exactly one action or constraint.
+
+multiple_subjects:
+  title: "Multiple coordinated subjects"
+  fix: |
+    Split into separate sentences, one per subject or action.
+    Avoid chaining more than 2 'and/or' conjunctions in a single sentence.
+
+passive_voice_without_agent:
+  title: "Passive voice without agent"
+  fix: |
+    Name who performs the action.
+    Bad:  "The service will be restarted."
+    Good: "The orchestrator restarts the service after migration completes."
