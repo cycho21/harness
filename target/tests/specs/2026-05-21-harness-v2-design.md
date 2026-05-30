@@ -1,14 +1,14 @@
 # Harness v2 Design Spec
 
-**Date:** 2026-05-21  
-**Branch:** feat/harness-improvement  
+**Date:** 2026-05-21
+**Branch:** feat/harness-improvement
 **Status:** Draft
 
 ---
 
 ## 1. Problem Statement
 
-현재 harness(`.claude/hooks/`)는 게이트가 존재하지만 실질적 효과가 없다.
+현재 harness(`.pi/hooks/`)는 게이트가 존재하지만 실질적 효과가 없다.
 
 ### 확인된 3가지 근본 원인
 
@@ -30,7 +30,7 @@
 
 > **"올바른 행동을 하게 만드는 것이 먼저, 막는 것은 최후 수단"**
 
-Hook은 LLM의 보조 수단이지 주 제어 수단이 아니다.  
+Hook은 LLM의 보조 수단이지 주 제어 수단이 아니다.
 실제 enforcement는 **LLM이 작업 시작 전부터 올바른 컨텍스트를 갖는 것**에서 나온다.
 
 이에 따라 harness를 3개 레이어로 구성한다:
@@ -56,7 +56,7 @@ Layer 3: Hard Gates         ← 최후 수단 (deny, 명백한 규칙 위반만)
 
 ### 3-1. SessionStart Hook — `session-start-context.sh`
 
-**트리거:** 세션 시작 시 (`SessionStart` 이벤트)  
+**트리거:** 세션 시작 시 (`SessionStart` 이벤트)
 **목적:** 작업 시작 전 LLM이 현재 상태를 정확히 알게 함
 
 **주입 내용:**
@@ -79,12 +79,12 @@ TDD 원칙:
 
 ### 3-2. Persona Auto-Inject — `persona-inject.sh`
 
-**트리거:** `PreToolUse(Edit|Write)` — 아키텍처/보안 파일 수정 전  
+**트리거:** `PreToolUse(Edit|Write)` — 아키텍처/보안 파일 수정 전
 **목적:** persona reminder를 "경고"에서 "컨텍스트 주입"으로 전환
 
 **현재 동작 (문제):**
 ```
-stderr: "[Persona] Read .claude/personas/architect/AGENTS.md"  ← 무시됨
+stderr: "[Persona] Read .pi/personas/architect/AGENTS.md"  ← 무시됨
 ```
 
 **새 동작:**
@@ -100,7 +100,7 @@ additionalContext: AGENTS.md 파일 내용 직접 주입
 
 ### 3-3. Pre-Commit Context — `pre-commit-context.sh`
 
-**트리거:** `PreToolUse(Bash)` — git commit 감지 시, 게이트보다 먼저 실행  
+**트리거:** `PreToolUse(Bash)` — git commit 감지 시, 게이트보다 먼저 실행
 **목적:** 차단 전에 LLM이 스스로 수정할 기회 제공
 
 **주입 내용:**
@@ -119,12 +119,12 @@ additionalContext: AGENTS.md 파일 내용 직접 주입
 
 ## 4. Layer 2: Soft Gates
 
-컨텍스트만으로 해결되지 않을 때 메인 에이전트의 판단을 요청한다.  
+컨텍스트만으로 해결되지 않을 때 메인 에이전트의 판단을 요청한다.
 `permissionDecision: ask` — 실질 응답자는 메인 세션 에이전트.
 
 ### 4-1. TDD Edit Gate — `guard-tdd-edit.sh`
 
-**트리거:** `PreToolUse(Edit)` — production Java 파일 수정 시  
+**트리거:** `PreToolUse(Edit)` — production Java 파일 수정 시
 **조건:** 대응 테스트 파일에 현재 세션에서의 변경이 없을 때
 
 **ask 메시지:**
@@ -148,7 +148,7 @@ additionalContext: AGENTS.md 파일 내용 직접 주입
 
 ### 4-2. Bypass Gate (env var 제거)
 
-**적용 대상:** `guard-coverage.sh`, `guard-code-review.sh`, `guard-static-analysis.sh`  
+**적용 대상:** `guard-coverage.sh`, `guard-code-review.sh`, `guard-static-analysis.sh`
 **변경:** `COVERAGE_SKIP=1` 등 env var bypass → `ask`로 대체
 
 **ask 메시지 예시 (커버리지):**
@@ -171,13 +171,13 @@ additionalContext: AGENTS.md 파일 내용 직접 주입
 
 ### 5-1. TDD Write Gate — `guard-tdd-write.sh` (기존 guard-test-first.sh 개선)
 
-**트리거:** `PreToolUse(Write)` — 새 production Java 파일 생성  
+**트리거:** `PreToolUse(Write)` — 새 production Java 파일 생성
 **메커니즘:** C+D 조합 — TDD 세션 토큰 + `@Test` 어노테이션
 
 **흐름:**
 ```
 Write(XxxTest.java) + @Test 포함
-  → hook이 .claude/hooks/gates/tdd-{ClassName} 토큰 생성
+  → hook이 .pi/hooks/gates/tdd-{ClassName} 토큰 생성
 
 Write(Xxx.java) 시도
   → 토큰 없으면 deny
@@ -185,12 +185,12 @@ Write(Xxx.java) 시도
 ```
 
 **우회 방지:**
-- 토큰 저장 위치: `.claude/hooks/gates/` → `guard-settings.sh`가 Edit/Write 차단
+- 토큰 저장 위치: `.pi/hooks/gates/` → `guard-settings.sh`가 Edit/Write 차단
 - Bash로 토큰 직접 생성 시: `guard-settings-bash.sh`가 ask 요청
 - `@Test` 없이 XxxTest.java만 생성: 토큰 미생성 → 구현 파일 차단
 
-**토큰 TTL:** 세션 간 잔류 토큰은 `SessionStart` hook에서 일괄 삭제한다.  
-(`session-start-context.sh`가 시작 시 `.claude/hooks/gates/tdd-*` 전체 삭제)
+**토큰 TTL:** 세션 간 잔류 토큰은 `SessionStart` hook에서 일괄 삭제한다.
+(`session-start-context.sh`가 시작 시 `.pi/hooks/gates/tdd-*` 전체 삭제)
 
 **deny 메시지:**
 ```
@@ -212,7 +212,7 @@ Write(Xxx.java) 시도
 
 ### 5-2. Code Review Gate — `guard-code-review.sh` (기존 유지 + bypass 수정)
 
-변경 사항: env var bypass 제거 → Layer 2 bypass gate로 이전  
+변경 사항: env var bypass 제거 → Layer 2 bypass gate로 이전
 기존 로직(review-result.json TTL, critical/major 임계값) 유지
 
 ---
@@ -231,7 +231,7 @@ Write(Xxx.java) 시도
 
 ### 5-5. Conventional Commits Gate — `guard-commit-message.sh` (신규)
 
-**트리거:** `PreToolUse(Bash)` — git commit 감지  
+**트리거:** `PreToolUse(Bash)` — git commit 감지
 **검사:** `^(feat|fix|chore|refactor|docs|test|perf|ci|style|revert)(\([a-z0-9-]+\))?: .+`
 
 **deny 메시지:**
@@ -270,12 +270,12 @@ deny "메시지"  # jq -n ... 래퍼
 ask "메시지"   # permissionDecision: ask 래퍼
 
 # violation 로깅
-log_violation "type" "file" "detail"  # → ~/.claude/hooks/violations.jsonl
+log_violation "type" "file" "detail"  # → ~/.pi/hooks/violations.jsonl
 ```
 
 ### 적용 대상
 
-모든 hook 파일에서 `source "${HOOK_DIR}/hook-common.sh"` 추가.  
+모든 hook 파일에서 `source "${HOOK_DIR}/hook-common.sh"` 추가.
 각 hook의 중복 구현 제거.
 
 ---
@@ -284,7 +284,7 @@ log_violation "type" "file" "detail"  # → ~/.claude/hooks/violations.jsonl
 
 ### 7-1. Violation Logging
 
-**위치:** `~/.claude/hooks/violations.jsonl`  
+**위치:** `~/.pi/hooks/violations.jsonl`
 **형식:**
 ```json
 {"ts":"2026-05-21T10:30:00Z","type":"tdd-write","file":"XxxService.java","branch":"feat/xxx","detail":"no token found"}
@@ -297,7 +297,7 @@ log_violation "type" "file" "detail"  # → ~/.claude/hooks/violations.jsonl
 
 ### 7-2. Stop Hook — `session-stop-report.sh`
 
-**트리거:** `Stop` 이벤트 (Claude 세션 종료 시)  
+**트리거:** `Stop` 이벤트 (PI 세션 종료 시)
 **출력:**
 ```
 === Harness Session Report ===
@@ -316,8 +316,8 @@ log_violation "type" "file" "detail"  # → ~/.claude/hooks/violations.jsonl
 
 ### 추가할 hook 연결
 
-hook 실행 순서는 settings.json 배열 순서에 의존한다.  
-`pre-commit-context.sh`는 반드시 Layer 3 게이트보다 앞에 위치해야 한다.  
+hook 실행 순서는 settings.json 배열 순서에 의존한다.
+`pre-commit-context.sh`는 반드시 Layer 3 게이트보다 앞에 위치해야 한다.
 settings.json의 `...` 자리는 구현 단계에서 실제 `command` 경로와 `timeout`으로 채운다.
 
 ```json

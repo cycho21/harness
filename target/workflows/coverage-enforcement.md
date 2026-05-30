@@ -2,29 +2,29 @@
 
 ## For Team Members
 
-### 1. Install Lefthook
+### 1. Install Leftgate
 
 **Windows (via Scoop)**:
 ```bash
-scoop install lefthook
+scoop install leftgate
 ```
 
 **macOS**:
 ```bash
-brew install lefthook
+brew install leftgate
 ```
 
 **Linux**:
 ```bash
-curl -1sLf 'https://dl.cloudsmith.io/public/evilmartians/lefthook/setup.deb.sh' | sudo -E bash
-sudo apt install lefthook
+curl -1sLf 'https://dl.cloudsmith.io/public/evilmartians/leftgate/setup.deb.sh' | sudo -E bash
+sudo apt install leftgate
 ```
 
-### 2. Initialize hooks
+### 2. Initialize gates
 
 ```bash
 cd /path/to/DevCenter
-lefthook install
+leftgate install
 ```
 
 ### 3. Test
@@ -34,9 +34,9 @@ lefthook install
 git commit -m "test"
 ```
 
-## For Claude Code Users
+## For PI Users
 
-Coverage hooks run automatically via `.claude/hooks/guard-coverage.sh`.
+Coverage gates run automatically via `.pi/extensions/coverage review guidance`.
 No additional setup needed.
 
 ---
@@ -52,7 +52,7 @@ No additional setup needed.
    ↓
 3. git commit
    ↓
-4. guard-coverage.sh triggers (Claude Code) OR Lefthook pre-commit (local)
+4. coverage review guidance triggers (PI) OR Leftgate pre-commit (local)
    ↓
 5. Extract changed modules
    ↓
@@ -110,14 +110,14 @@ No additional setup needed.
    git commit -m "feat: add tests for coverage"
    ```
 
-### "Lefthook not running" — Check installation
+### "Leftgate not running" — Check installation
 
 ```bash
-# Verify Lefthook is installed
-lefthook version
+# Verify Leftgate is installed
+leftgate version
 
-# Reinstall hooks
-lefthook install
+# Reinstall gates
+leftgate install
 
 # Debug mode
 LEFTHOOK_VERBOSE=1 git commit -m "test"
@@ -137,7 +137,7 @@ Only new/modified code needs to meet the threshold.
 
 **NOT RECOMMENDED** — Use only for emergency hotfixes.
 
-### Claude Code (guard-coverage.sh)
+### PI (coverage review guidance)
 
 ```bash
 # Temporarily disable coverage check
@@ -150,10 +150,10 @@ git commit -m "hotfix: critical bug"
 unset COVERAGE_SKIP
 ```
 
-### Lefthook
+### Leftgate
 
 ```bash
-# Skip all pre-commit hooks
+# Skip all pre-commit gates
 git commit --no-verify -m "hotfix: critical bug"
 ```
 

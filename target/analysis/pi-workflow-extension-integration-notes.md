@@ -9,7 +9,7 @@
   - hook/tool_call 기반 gate
   - 파일 토큰 대신 in-memory token 사용
   - `/skill:code-review` 이후 `submit_review_result` tool로 커밋 허용 토큰 발급
-- `WORKFLOW.md`, `CLAUDE.md`, `skills/*`에 lifecycle/skill 중심 workflow가 이미 잘 정리되어 있다.
+- `WORKFLOW.md`, `AGENTS.md`, `skills/*`에 lifecycle/skill 중심 workflow가 이미 잘 정리되어 있다.
 
 ## 우리 실험과의 매핑
 

@@ -1,7 +1,7 @@
 /**
  * harness-gates.ts — Pi Extension
  *
- * 기존 Claude Code harness의 final-stage 게이트를 Pi에서 재구현.
+ * 기존 harness의 final-stage 게이트를 Pi extension으로 구현.
  * 핵심 개선: 파일 기반 토큰 → 프로세스 메모리 토큰 (LLM이 bash로 위조 불가)
  *
  * 구현 게이트:
@@ -38,12 +38,9 @@ export default function (pi: ExtensionAPI) {
 
   // ── resources_discover: 기존 harness skills Pi에 등록 ──────────────────────
   pi.on("resources_discover", async () => {
-    const skillPaths = [
-      path.join(HARNESS_ROOT, ".claude", "skills"),
-      path.join(HARNESS_ROOT, "skills"), // legacy fallback
-    ].filter((skillsPath) => fs.existsSync(skillsPath));
-    if (skillPaths.length === 0) return;
-    return { skillPaths };
+    const skillsPath = path.join(HARNESS_ROOT, ".pi", "skills");
+    if (!fs.existsSync(skillsPath)) return;
+    return { skillPaths: [skillsPath] };
   });
 
   // ── Tool: submit_review_result ─────────────────────────────────────────────
@@ -303,7 +300,7 @@ export default function (pi: ExtensionAPI) {
 
   // ── before_agent_start: 매 턴 gate 상태를 system prompt에 주입 ─────────────
   //
-  // 거절 메시지(context)로 규칙을 전달하는 Claude Code 방식과 달리,
+  // 거절 메시지(context)로만 규칙을 전달하는 방식과 달리,
   // system prompt에 주입하면 LLM이 이를 "극복할 장애물"이 아닌
   // "자신이 따라야 할 규칙"으로 인식합니다.
   pi.on("before_agent_start", async (event) => {

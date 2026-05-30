@@ -6,7 +6,7 @@
 ## Checklist
 
 ### Code Quality (Auto-enforced)
-- [ ] All Edit/Write hooks passed (code-guardrail.js — Checkstyle + PMD)
+- [ ] All Edit/Write gates passed (code-guardrail.js — Checkstyle + PMD)
 - [ ] Unit tests pass: `./gradlew :module:test`
 - [ ] No new Checkstyle violations introduced (api-service: enforced, others: advisory)
 
@@ -35,4 +35,4 @@
 
 ## On Approval
 
-Run `/push-with-review` skill (per CLAUDE.md Push Protocol).
+Run `/push-with-review` skill (per AGENTS.md Push Protocol).

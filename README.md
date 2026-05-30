@@ -13,12 +13,9 @@ pi
 
 Key runtime entrypoints:
 
+- `target/AGENTS.md`
+- `target/WORKFLOW.md`
 - `target/.pi/extensions/harness-gates.ts`
 - `target/.pi/skills/`
-- `target/CLAUDE.md`
-- `target/WORKFLOW.md`
-- `target/.claude/settings.json`
-- `target/.claude/settings.local.json`
-- `target/.claude/skills/`
-- `target/.claude/hooks/`
-- `target/.claude/personas/`
+- `target/.pi/personas/`
+- `target/.pi/GOVERNANCE.md`

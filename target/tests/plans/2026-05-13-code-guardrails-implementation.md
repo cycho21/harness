@@ -18,7 +18,7 @@
 ## ⚠️ Critical Design Constraints
 
 ### 1. Hook API is stdin-based
-Claude Code hooks receive input via stdin as JSON. Pattern from existing `validate-feat-html.js`:
+PI hooks receive input via stdin as JSON. Pattern from existing `validate-feat-html.js`:
 ```js
 #!/usr/bin/env node
 async function main() {
@@ -88,19 +88,19 @@ The hook treats "no report file produced" as a tool error and allows the save (f
 "PreToolUse": [
   {
     "matcher": "Edit",
-    "hooks": [{"type": "command", "command": "node D:/JavaProject/DevCenter/.claude/hooks/code-guardrail.js"}]
+    "hooks": [{"type": "command", "command": "node D:/JavaProject/DevCenter/.pi/hooks/code-guardrail.js"}]
   },
   {
     "matcher": "Write",
-    "hooks": [{"type": "command", "command": "node D:/JavaProject/DevCenter/.claude/hooks/code-guardrail.js"}]
+    "hooks": [{"type": "command", "command": "node D:/JavaProject/DevCenter/.pi/hooks/code-guardrail.js"}]
   }
 ]
 ```
 Note: Absolute path matches existing hook registration convention in this project.
 
 ### 11. Per-edit override UX (deferred to Phase 2)
-Claude Code's PreToolUse hook has no built-in per-violation decision mechanism — exit(2) blocks entirely.
-Global bypass (`GUARDRAIL_SKIP=1` or `.claude/.guardrail-skip`) is the only override for Phase 1.
+PI's PreToolUse hook has no built-in per-violation decision mechanism — exit(2) blocks entirely.
+Global bypass (`GUARDRAIL_SKIP=1` or `.pi/.guardrail-skip`) is the only override for Phase 1.
 
 ---
 
@@ -108,15 +108,15 @@ Global bypass (`GUARDRAIL_SKIP=1` or `.claude/.guardrail-skip`) is the only over
 
 **New files:**
 - `config/pmd/ruleset.xml` - PMD rules configuration
-- `.claude/hooks/code-guardrail.js` - Main hook implementation
+- `.pi/hooks/code-guardrail.js` - Main hook implementation
 
 **Modified files:**
 - `config/checkstyle/checkstyle.xml` - Add new rules (ClassDataAbstractionCoupling, JavaNCSS)
 - `api-service/build.gradle` - Add PMD plugin + `guardFilePath` property support
 - `consumer-service/build.gradle` - Add Checkstyle + PMD plugins + `guardFilePath` support
 - `common/build.gradle` - Add Checkstyle + PMD plugins + `guardFilePath` support
-- `.claude/settings.json` - Register hook (PreToolUse, Edit + Write matchers)
-- `.claudeignore` - Add build report directories
+- `.pi/settings.json` - Register hook (PreToolUse, Edit + Write matchers)
+- `.piignore` - Add build report directories
 - `.gitignore` - Add `.guardrail-skip`
 
 ---
@@ -431,7 +431,7 @@ Unified guardFilePath property (files() FileCollection).
 
 ## Task 6: Hook Implementation — Skeleton
 
-**Files:** Create `.claude/hooks/code-guardrail.js`
+**Files:** Create `.pi/hooks/code-guardrail.js`
 
 - [x] **Step 1: Create hook skeleton**
 
@@ -440,7 +440,7 @@ Unified guardFilePath property (files() FileCollection).
 /**
  * Code Guardrail Hook — PreToolUse (Edit, Write)
  *
- * Reads Claude Code hook payload from stdin (JSON).
+ * Reads PI hook payload from stdin (JSON).
  * exit(0) = allow, exit(2) = block (message written to stdout).
  *
  * Layer execution order:
@@ -449,7 +449,7 @@ Unified guardFilePath property (files() FileCollection).
  *
  * CPD intentionally excluded — project-wide, belongs in CI.
  * Prerequisite: <gradlew> compileJava compileTestJava must have run at least once.
- * Bypass: GUARDRAIL_SKIP=1 env var, or create .claude/.guardrail-skip
+ * Bypass: GUARDRAIL_SKIP=1 env var, or create .pi/.guardrail-skip
  */
 
 const { execSync } = require('child_process');
@@ -484,7 +484,7 @@ async function main() {
   }
 
   if (process.env.GUARDRAIL_SKIP === '1' ||
-      fs.existsSync(path.join(PROJECT_ROOT, '.claude/.guardrail-skip'))) {
+      fs.existsSync(path.join(PROJECT_ROOT, '.pi/.guardrail-skip'))) {
     console.error(`[Guardrail] SKIP active — bypassing: ${path.basename(filePath)}`);
     process.exit(0);
   }
@@ -505,7 +505,7 @@ main();
 
 - [x] **Step 2: Verify syntax**
 
-`node --check .claude/hooks/code-guardrail.js`
+`node --check .pi/hooks/code-guardrail.js`
 
 - [x] **Step 3: Commit**
 
@@ -514,14 +514,14 @@ feat: add code guardrail hook skeleton
 
 Cross-platform: GRADLEW detects win32 vs posix.
 PROJECT_ROOT via git rev-parse (fallback to __dirname).
-Bypass: GUARDRAIL_SKIP=1 or .claude/.guardrail-skip.
+Bypass: GUARDRAIL_SKIP=1 or .pi/.guardrail-skip.
 ```
 
 ---
 
 ## Task 7: Hook Layer 2+3 — Checkstyle + PMD
 
-**Files:** Modify `.claude/hooks/code-guardrail.js`
+**Files:** Modify `.pi/hooks/code-guardrail.js`
 
 - [x] **Step 1: Add `getModuleInfo()` with source set detection**
 
@@ -685,7 +685,7 @@ XML entity decoding in error messages.
 
 ## Task 8: Hook Layer 1 — Deletion Detection
 
-**Files:** Modify `.claude/hooks/code-guardrail.js`
+**Files:** Modify `.pi/hooks/code-guardrail.js`
 
 - [x] **Step 1: Add `getDeletedLines()` — reads tool_input, not git diff**
 
@@ -816,7 +816,7 @@ function formatDeletionWarning(tier1, tier2) {
     tier2.forEach(v => { msg += `  - ${v}\n`; });
     msg += '\nThis may be unintentional. Review before proceeding.\n';
   }
-  msg += '\nTo override: GUARDRAIL_SKIP=1 or create .claude/.guardrail-skip';
+  msg += '\nTo override: GUARDRAIL_SKIP=1 or create .pi/.guardrail-skip';
   return msg;
 }
 ```
@@ -877,7 +877,7 @@ Expected: Tier 2 "≥50% of file", exit(2).
 
 - [x] **Step 9: Test — bypass**
 
-`GUARDRAIL_SKIP=1 node .claude/hooks/code-guardrail.js < /dev/null`
+`GUARDRAIL_SKIP=1 node .pi/hooks/code-guardrail.js < /dev/null`
 Expected: exit(0), no validation.
 
 - [x] **Step 10: Commit**
@@ -901,7 +901,7 @@ Tier 3: falls through implicitly (private, comments, blank lines).
 
 ## Task 9: Hook Registration and Integration Testing
 
-**Files:** Modify `.claude/settings.json`
+**Files:** Modify `.pi/settings.json`
 
 - [x] **Step 1: Register hook for Edit and Write (PreToolUse)**
 
@@ -910,11 +910,11 @@ Add to `hooks.PreToolUse`:
 ```json
 {
   "matcher": "Edit",
-  "hooks": [{"type": "command", "command": "node D:/JavaProject/DevCenter/.claude/hooks/code-guardrail.js"}]
+  "hooks": [{"type": "command", "command": "node D:/JavaProject/DevCenter/.pi/hooks/code-guardrail.js"}]
 },
 {
   "matcher": "Write",
-  "hooks": [{"type": "command", "command": "node D:/JavaProject/DevCenter/.claude/hooks/code-guardrail.js"}]
+  "hooks": [{"type": "command", "command": "node D:/JavaProject/DevCenter/.pi/hooks/code-guardrail.js"}]
 }
 ```
 
@@ -960,17 +960,17 @@ Phase 1: Code Guardrails complete.
 `<gradlew> checkstyleMain pmdMain`
 Document pre-existing violations — do not fix now (out of scope).
 
-- [x] **Step 2: Add build report directories to .claudeignore**
+- [x] **Step 2: Add build report directories to .piignore**
 
 ```
 **/build/reports/checkstyle/
 **/build/reports/pmd/
 ```
-Prevents Claude from reading report XML artifacts as source context.
+Prevents PI from reading report XML artifacts as source context.
 
 - [x] **Step 3: Add .guardrail-skip to .gitignore**
 
-`echo ".claude/.guardrail-skip" >> .gitignore`
+`echo ".pi/.guardrail-skip" >> .gitignore`
 
 - [x] **Step 4: Update spec performance numbers**
 
@@ -983,7 +983,7 @@ In `docs/superpowers/specs/2026-05-12-llm-code-guardrails-design.md`:
 ```
 chore: wrap-up code guardrails phase 1
 
-- Add build/reports to .claudeignore
+- Add build/reports to .piignore
 - Add .guardrail-skip to .gitignore
 - Update spec performance numbers
 ```
@@ -1010,7 +1010,7 @@ chore: wrap-up code guardrails phase 1
 - [x] Fail-open: timeout and missing report both allow (not block)
 - [x] Bypass: `GUARDRAIL_SKIP=1` and `.guardrail-skip` file both work
 - [x] `.guardrail-skip` in `.gitignore`
-- [x] `build/reports/` in `.claudeignore`
+- [x] `build/reports/` in `.piignore`
 - [x] Hook registered under PreToolUse, Edit + Write matchers
 - [x] Wall-clock time measured and documented
 - [x] Spec performance numbers updated
@@ -1054,7 +1054,7 @@ Fixed: Hook API (stdin), deletion detection timing (tool_input not git diff), Ch
 - `isReplacement`: non-empty check → ≥30% size ratio guard
 - `detectTier2`: added 50% of file deleted threshold (from spec, was silently dropped)
 - `err.signal === 'SIGTERM' || err.killed` → `err.killed` only (Windows compat)
-- `build/reports/` added to `.claudeignore`
+- `build/reports/` added to `.piignore`
 - `html.required` change documented as behavioral impact on CI
 - GodClass `tcc=0.5` noted as more aggressive than PMD default (0.33)
 - JavaNCSS compatibility check added to Task 2

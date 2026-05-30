@@ -1,7 +1,7 @@
 # LLM Code Guardrails Design
 
-**Date**: 2026-05-12  
-**Status**: Approved  
+**Date**: 2026-05-12
+**Status**: Approved
 **Purpose**: Prevent LLM from generating problematic code through real-time validation hooks
 
 ## Motivation
@@ -21,7 +21,7 @@ Edit/Write Tool Invoked
     ↓
 ┌─────────────────────────────────────┐
 │ code-guardrail.js Hook              │
-│ (registered in .claude/settings.json)│
+│ (registered in .pi/settings.json)│
 └─────────────────────────────────────┘
     ↓
 Layer 1: Deletion Detection (~0.3s)
@@ -115,7 +115,7 @@ Documentation Decision Gate
 │
 └─ If Medium/High impact → Ask user: "이 feature는 문서화가 필요할까요?"
     ↓ (User says Yes)
-    
+
 DOCUMENT Phase (feature-documentation workflow)
     ↓
 ┌─ Step 1: Auto-collect
@@ -160,7 +160,7 @@ DOCUMENT Phase (feature-documentation workflow)
 
 **No blocking**: Documentation is **never mandatory**. Harness suggests, user decides.
 
-**Reviewer responsibility**: 
+**Reviewer responsibility**:
 - If code is unclear and no docs exist → Request documentation in review
 - If code is self-explanatory → Approve without docs
 
@@ -312,7 +312,7 @@ Detect code duplication (LLM's common pattern: copy-paste refactoring).
       <property name="minimum" value="500"/>
     </properties>
   </rule>
-  
+
   <!-- Unnecessary code patterns -->
   <rule ref="category/java/codestyle.xml/UnnecessaryLocalBeforeReturn"/>
   <rule ref="category/java/design.xml/SimplifyBooleanReturns"/>
@@ -350,42 +350,42 @@ Refactor duplicated code into a shared method.
 
 ### Registration
 
-**File**: `.claude/settings.json`
+**File**: `.pi/settings.json`
 
 ```json
 {
   "hooks": {
-    "Edit": ".claude/hooks/code-guardrail.js",
-    "Write": ".claude/hooks/code-guardrail.js"
+    "Edit": ".pi/hooks/code-guardrail.js",
+    "Write": ".pi/hooks/code-guardrail.js"
   }
 }
 ```
 
 ### Hook Logic
 
-**File**: `.claude/hooks/code-guardrail.js`
+**File**: `.pi/hooks/code-guardrail.js`
 
 ```javascript
 module.exports = async (context) => {
   const { filePath, tool, approvalOverride } = context;
-  
+
   // Only validate Java files
   if (!filePath.endsWith('.java')) {
     return { allowed: true };
   }
-  
+
   // Layer 1: Deletion Detection
   if (!approvalOverride) {
     const deletionCheck = await checkDeletions(filePath);
     if (deletionCheck.tier1 || deletionCheck.tier2) {
-      return { 
+      return {
         allowed: false,
         requiresApproval: true,
         message: deletionCheck.message
       };
     }
   }
-  
+
   // Layer 2: Checkstyle
   const styleViolations = await runCheckstyle(filePath);
   if (styleViolations.length > 0) {
@@ -394,7 +394,7 @@ module.exports = async (context) => {
       reason: formatCheckstyleErrors(styleViolations)
     };
   }
-  
+
   // Layer 3: PMD CPD
   const duplications = await runPmdCpd(filePath);
   if (duplications.length > 0) {
@@ -403,23 +403,23 @@ module.exports = async (context) => {
       reason: formatCpdErrors(duplications)
     };
   }
-  
+
   return { allowed: true };
 };
 ```
 
 ### User Interaction
 
-**Method**: Hook returns blocking result with detailed message. Claude Code displays the message and waits for user decision.
+**Method**: Hook returns blocking result with detailed message. PI displays the message and waits for user decision.
 
 **Flow**:
 1. Hook detects Tier 1/2 violation
 2. Return `{ allowed: false, requiresApproval: true, message: "..." }`
-3. Claude Code shows message to user
+3. PI shows message to user
 4. User chooses: "Proceed Anyway" or "Cancel"
 5. If user proceeds, re-invoke Edit/Write with approval flag
 
-**Fallback**: If Claude Code doesn't support `requiresApproval`, hook blocks unconditionally (safe default).
+**Fallback**: If PI doesn't support `requiresApproval`, hook blocks unconditionally (safe default).
 
 **Timeout**: No timeout needed (user must explicitly choose).
 
@@ -472,7 +472,7 @@ tasks.withType(Pmd) {
 
 ```
 DevCenter/
-├── .claude/
+├── .pi/
 │   ├── settings.json              (Hook registration)
 │   ├── hooks/
 │   │   └── code-guardrail.js      (Main hook logic - Phase 1)
@@ -518,7 +518,7 @@ DevCenter/
 ```
 
 **Rationale**:
-- `.claude/` = Harness runtime (hooks, workflows, personas, plans)
+- `.pi/` = Harness runtime (hooks, workflows, personas, plans)
 - `config/` = Build tools configuration (language-specific)
 - `docs/` = Human-readable documentation (design docs, feature specs)
 
@@ -577,7 +577,7 @@ Build a unified workflow harness that orchestrates:
 
 **Philosophy**: Fork Superpowers' workflow concepts, reverse-engineer the core patterns, and simplify to checklist-based workflows. No external dependencies—own the entire workflow. Language/framework agnostic design, with concrete implementations per project (DevCenter uses Spring Boot/Java).
 
-**Unified Structure**: All harness components live under `.claude/` for easy discovery and management.
+**Unified Structure**: All harness components live under `.pi/` for easy discovery and management.
 
 ```
 User Request
@@ -598,7 +598,7 @@ User Request
 │ - Break into implementable tasks    │
 │ - Define acceptance criteria        │
 │ - Identify dependencies             │
-│ Output: .claude/plans/<feature>.md  │
+│ Output: .pi/plans/<feature>.md  │
 │ Gate: User approval before coding   │
 └─────────────────────────────────────┘
     ↓
@@ -655,13 +655,13 @@ User Request
 The harness combines three independent systems into a unified workflow controller:
 
 #### 1. Superpowers Skills (Process Workflows)
-- **Source**: `.claude/plugins/cache/claude-plugins-official/superpowers/`
+- **Source**: `.pi/plugins/cache/pi-plugins-official/superpowers/`
 - **Purpose**: Enforce software engineering best practices (TDD, incremental implementation, specs-first)
 - **Examples**: `brainstorming`, `writing-plans`, `incremental-implementation`, `test-driven-development`
 - **Integration**: Harness invokes skills at correct phases, prevents skipping
 
 #### 2. Role-Based Personas (Expert Sub-Agents)
-- **Source**: `.claude/personas/{architect,developer,reviewer}/PERSONA.md`
+- **Source**: `.pi/personas/{architect,developer,reviewer}/PERSONA.md`
 - **Purpose**: Delegate specialized work to expert personas with clear responsibilities
 - **Hierarchy**:
   - **Architect** → System Designer + Tech Stack Specialist
@@ -670,7 +670,7 @@ The harness combines three independent systems into a unified workflow controlle
 - **Integration**: Harness dispatches tasks to appropriate persona based on work type
 
 #### 3. Code Guardrails (Quality Gates)
-- **Source**: This design - `.claude/hooks/code-guardrail.js`
+- **Source**: This design - `.pi/hooks/code-guardrail.js`
 - **Purpose**: Real-time validation on Edit/Write to prevent LLM from generating bad code
 - **Layers**: Deletion detection + Checkstyle + PMD CPD
 - **Integration**: Runs automatically during IMPLEMENT phase, blocks saves on violations
@@ -691,13 +691,13 @@ The harness combines three independent systems into a unified workflow controlle
 - Require user approval to expand scope
 - Architect must approve architectural changes
 
-**Prevent Role Confusion** (via `.claude/personas/` dispatcher):
-- Route DB schema changes → `.claude/personas/architect/system-designer.md`
-- Route library additions → `.claude/personas/architect/tech-stack-specialist.md`
-- Route business logic → `.claude/personas/developer/{backend,frontend}-engineer.md`
-- Route security concerns → `.claude/personas/reviewer/security-expert.md`
-- Route performance issues → `.claude/personas/reviewer/performance-analyst.md`
-- Route test generation → `.claude/personas/developer/tester.md`
+**Prevent Role Confusion** (via `.pi/personas/` dispatcher):
+- Route DB schema changes → `.pi/personas/architect/system-designer.md`
+- Route library additions → `.pi/personas/architect/tech-stack-specialist.md`
+- Route business logic → `.pi/personas/developer/{backend,frontend}-engineer.md`
+- Route security concerns → `.pi/personas/reviewer/security-expert.md`
+- Route performance issues → `.pi/personas/reviewer/performance-analyst.md`
+- Route test generation → `.pi/personas/developer/tester.md`
 
 **Prevent Premature Optimization**:
 - Block performance refactoring unless Performance Analyst shows actual issue
@@ -713,17 +713,17 @@ The harness combines three independent systems into a unified workflow controlle
 - Real-time validation on Edit/Write
 - Complexity/duplication/deletion controls
 - **Status**: Design complete, implementation next
-- **Deliverable**: `.claude/hooks/code-guardrail.js` + PMD config
+- **Deliverable**: `.pi/hooks/code-guardrail.js` + PMD config
 
 **Phase 2: Persona Integration**
-- Move `docs/agents/` → `.claude/personas/` (unified structure)
+- Move `docs/agents/` → `.pi/personas/` (unified structure)
 - Integrate personas into workflow dispatcher
 - Route tasks to Architect/Developer/Reviewer based on work type
 - Enforce persona specialization (no Backend Engineer doing frontend work)
-- **Deliverable**: Persona dispatcher hook + `.claude/personas/` structure
+- **Deliverable**: Persona dispatcher hook + `.pi/personas/` structure
 
 **Phase 3: Workflow Enforcement**
-- Create `.claude/workflows/*.md` (forked from Superpowers concepts)
+- Create `.pi/workflows/*.md` (forked from Superpowers concepts)
   - requirement-analysis.md
   - task-planning.md
   - iterative-dev.md
@@ -777,7 +777,7 @@ The harness combines three independent systems into a unified workflow controlle
 The harness orchestrates three independent systems:
 
 #### DevCenter Workflows → Process Control
-**Source**: `.claude/workflows/*.md` (forked from Superpowers concepts, simplified)
+**Source**: `.pi/workflows/*.md` (forked from Superpowers concepts, simplified)
 
 | Workflow | When Invoked | Enforced By | Superpowers Equivalent |
 |----------|--------------|-------------|----------------------|
@@ -792,11 +792,11 @@ The harness orchestrates three independent systems:
 - Workflows are **checklists**, not full skills (lighter weight)
 - Language-agnostic design (core process is universal)
 - Concrete tools/configs per project (DevCenter: Checkstyle/PMD for Java; others: Pylint for Python, etc.)
-- Integrated with `.claude/personas/` (not standalone)
+- Integrated with `.pi/personas/` (not standalone)
 - Fewer steps, faster execution
-- Unified `.claude/` structure (workflows + personas + hooks)
+- Unified `.pi/` structure (workflows + personas + hooks)
 
-**Example Workflow Structure** (`.claude/workflows/task-planning.md`):
+**Example Workflow Structure** (`.pi/workflows/task-planning.md`):
 ```markdown
 # Task Planning Workflow
 
@@ -810,7 +810,7 @@ Break approved requirements into implementable tasks with clear acceptance crite
 - [ ] Define acceptance criteria for each task
 - [ ] Identify task dependencies (which tasks block others)
 - [ ] Estimate complexity (S/M/L)
-- [ ] Write to `.claude/plans/<feature-name>.md`
+- [ ] Write to `.pi/plans/<feature-name>.md`
 - [ ] Get user approval
 
 ## Output Format
@@ -824,7 +824,7 @@ Break approved requirements into implementable tasks with clear acceptance crite
 - No task is larger than 1 day of work
 ```
 
-**Example: feature-documentation Workflow** (`.claude/workflows/feature-documentation.md`):
+**Example: feature-documentation Workflow** (`.pi/workflows/feature-documentation.md`):
 ```markdown
 # Feature Documentation Workflow
 
@@ -856,7 +856,7 @@ Document completed features with context, flow diagrams, and design decisions. G
 
 All workflows follow this pattern: Purpose → Checklist → Output Format → Success Criteria.
 
-#### .claude/personas → Work Delegation
+#### .pi/personas → Work Delegation
 
 | Persona | Triggered When | Deliverable |
 |---------|---------------|-------------|
@@ -879,10 +879,10 @@ All workflows follow this pattern: Purpose → Checklist → Output Format → S
 | Layer 2: Checkstyle | Every Edit/Write | Complexity, length, style violations |
 | Layer 3: PMD CPD | Every Edit/Write | Code duplication > 10 lines |
 
-**Key Principle**: 
-- **`.claude/workflows/`** define *what* process to follow (inspired by Superpowers, owned by DevCenter)
-- **`.claude/personas/`** define *who* does the work
-- **`.claude/hooks/`** define *how* code quality is enforced
+**Key Principle**:
+- **`.pi/workflows/`** define *what* process to follow (inspired by Superpowers, owned by DevCenter)
+- **`.pi/personas/`** define *who* does the work
+- **`.pi/hooks/`** define *how* code quality is enforced
 
 The harness **orchestrates** all three, ensuring the right workflow is executed, by the right persona, with the right quality checks.
 
@@ -893,7 +893,7 @@ The harness **orchestrates** all three, ensuring the right workflow is executed,
 4. **Integration**: Workflows tightly coupled with personas (Superpowers is standalone)
 5. **Speed**: Checklist-based workflows vs. full-featured skills (faster execution)
 6. **Language-agnostic**: Core workflows are universal; only tools/configs are project-specific
-7. **Unified structure**: All harness components in `.claude/` for easy discovery
+7. **Unified structure**: All harness components in `.pi/` for easy discovery
 
 ---
 
@@ -976,7 +976,7 @@ The harness **orchestrates** all three, ensuring the right workflow is executed,
    │ Process │      │ Persona  │      │ Quality │
    └─────────┘      └──────────┘      └─────────┘
         │                │                 │
-   .claude/         .claude/           .claude/hooks/
+   .pi/         .pi/           .pi/hooks/
    workflows/       personas/          code-guardrail.js
    (forked from     (role-based        (quality gates)
    Superpowers)     sub-agents)
@@ -1009,7 +1009,7 @@ The harness **orchestrates** all three, ensuring the right workflow is executed,
    → Break into tasks: [AuthService, AuthController, JwtUtil, SecurityConfig, Tests]
    → Define acceptance criteria for each task
    → Identify task dependencies
-   Output: .claude/plans/auth-feature-plan.md
+   Output: .pi/plans/auth-feature-plan.md
    Gate: User approves task breakdown ✅
 
 3. IMPLEMENT Phase - Task 1: AuthService
@@ -1037,7 +1037,7 @@ The harness **orchestrates** all three, ensuring the right workflow is executed,
      - Non-obvious trade-off (stateless tokens vs server memory)
    → Suggest: "이 feature는 아키텍처 결정이 포함되어 문서화를 추천합니다. 진행할까요?"
    → User: "네" (문서화 진행)
-   
+
    If user accepts:
    → Auto-collect:
      - git log dev..HEAD (5 commits)
@@ -1048,7 +1048,7 @@ The harness **orchestrates** all three, ensuring the right workflow is executed,
    → Generate Mermaid diagrams (코드 분석 기반)
    → Write docs/feat/auth-feature.md
    → Render docs/feat/html/auth-feature.html (toggle/tab/accordion patterns)
-   
+
    If user declines:
    → Skip DOCUMENT, proceed to REVIEW
    → Reviewer can still request docs during review if code is unclear

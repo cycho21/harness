@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 두 개의 독립 Claude Code 세션(개발/감사)이 커밋 단위로 협업할 수 있도록 git ref 기반 감사 추적 + audit-input.md 생성 하네스를 구축한다.
+**Goal:** 두 개의 독립 PI 세션(개발/감사)이 커밋 단위로 협업할 수 있도록 git ref 기반 감사 추적 + audit-input.md 생성 하네스를 구축한다.
 
 **Architecture:** Node.js ESM CLI. `scripts/ai-audit/cli.mjs`가 진입점. 모듈별 단일 책임 (git/fs/templates/verdict). `.ai/` 디렉토리가 감사 상태와 컨텍스트를 보관. `refs/ai/reviewer/last-reviewed` git ref가 감사 기준점.
 
@@ -1035,7 +1035,7 @@ node scripts/ai-audit/cli.mjs mark-reviewed
 
 ### 7b. OK가 아닌 경우
 
-pointer를 이동하지 않음. Dev Session이 수정 후 재커밋.  
+pointer를 이동하지 않음. Dev Session이 수정 후 재커밋.
 4번부터 반복.
 
 ## 커맨드 참조

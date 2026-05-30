@@ -117,15 +117,15 @@ All hooks passed → git commit executes
   "hooks": [
     {
       "type": "command",
-      "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-git-push.sh"
+      "command": "${PI_PROJECT_DIR}/.pi/hooks/guard-git-push.sh"
     },
     {
       "type": "command",
-      "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-coverage.sh"
+      "command": "${PI_PROJECT_DIR}/.pi/hooks/guard-coverage.sh"
     },
     {
       "type": "command",
-      "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-git-commit.sh"
+      "command": "${PI_PROJECT_DIR}/.pi/hooks/guard-git-commit.sh"
     }
   ]
 }
@@ -290,18 +290,18 @@ timeout 300 ./gradlew test jacocoTestReport 2>&1
 
 1. ✅ **Reorder hooks**: coverage before commit approval
 2. ✅ **Add timeout**: guard-coverage.sh should timeout after 5 min
-3. ✅ **Document**: coverage check can be slow, explain in .claude/workflows/coverage-enforcement.md
+3. ✅ **Document**: coverage check can be slow, explain in .pi/workflows/coverage-enforcement.md
 4. ⚠️ **Consider**: Skip coverage check if COVERAGE_SKIP=1 (emergency bypass)
 
 ---
 
 ## Final Verdict
 
-**No infinite loops**: ✅  
-**No resource conflicts**: ✅  
-**No logical errors**: ✅ (after reordering)  
-**Performance acceptable**: ⚠️ (10-60s delay, but only when .java changed)  
-**Side effects isolated**: ✅  
+**No infinite loops**: ✅
+**No resource conflicts**: ✅
+**No logical errors**: ✅ (after reordering)
+**Performance acceptable**: ⚠️ (10-60s delay, but only when .java changed)
+**Side effects isolated**: ✅
 
 **Action items**:
 1. Reorder hooks in settings.json

@@ -1,6 +1,6 @@
 # External Memory System 설계
 
-**날짜:** 2026-05-18  
+**날짜:** 2026-05-18
 **목표:** 개발 중 발견한 실패 패턴과 학습을 저장해 LLM이 같은 실수를 반복하지 않도록 하고, 컨텍스트 윈도우 부담을 줄인다.
 
 ---
@@ -14,8 +14,8 @@ project/
 │   ├── spring-pitfalls.md
 │   ├── test-strategy.md
 │   └── ...
-├── CLAUDE.md             # 작업 전 INDEX 읽기 지시사항 추가
-└── .claude/
+├── AGENTS.md             # 작업 전 INDEX 읽기 지시사항 추가
+└── .pi/
     └── hooks/
         └── post-tool-use-memory.js  # 편집 후 관련 메모리 주입
 ```
@@ -62,7 +62,7 @@ added: 2026-05-18
 
 ---
 
-## 4. CLAUDE.md 추가 지시사항
+## 4. AGENTS.md 추가 지시사항
 
 ```markdown
 ## Project Memory
@@ -80,8 +80,8 @@ added: 2026-05-18
 
 ## 5. PostToolUse 훅
 
-**파일:** `.claude/hooks/post-tool-use-memory.js`  
-**트리거:** Write, Edit 이후  
+**파일:** `.pi/hooks/post-tool-use-memory.js`
+**트리거:** Write, Edit 이후
 
 동작:
 1. 편집된 파일 경로 확인
@@ -100,13 +100,13 @@ added: 2026-05-18
 
 ## 6. 메모리 작성 워크플로우
 
-**자동 (Claude 제안):**
+**자동 (PI 제안):**
 - 작업 종료 시 새 실패 패턴 발견하면 제안
-- 승인 후 Claude가 파일 작성 + INDEX.md 업데이트
+- 승인 후 PI가 파일 작성 + INDEX.md 업데이트
 
 **수동 (사용자 직접):**
 - `.project-memory/`에 파일 직접 작성
-- INDEX.md 업데이트는 Claude에게 요청 가능
+- INDEX.md 업데이트는 PI에게 요청 가능
 
 ---
 
