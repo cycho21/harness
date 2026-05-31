@@ -1,0 +1,20 @@
+[
+  {"actor":"user","kind":"command","name":"workflow","args":"start Add audit logging to the CLI"},
+  {"actor":"assistant","kind":"message","text":"I will interview for requirements first, then ask for approval before planning."},
+  {"actor":"user","kind":"input","text":"요구사항 충분해. 승인합니다."},
+  {"actor":"assistant","kind":"message","text":"I will draft the implementation plan and request approval before review."},
+  {"actor":"user","kind":"input","text":"계획 승인합니다."},
+  {"actor":"assistant","kind":"message","text":"I will review the plan with DPAA before implementation."},
+  {"actor":"user","kind":"input","text":"구현으로 넘어가도 좋아. 승인합니다.","expect_blocked":"DPAA"},
+  {"actor":"assistant","kind":"artifact","name":".ai/interview/plan.md","dpaa_level":"PASS","text":"# Plan\n\n- Add deterministic audit log tests.\n- Implement with explicit verification.\n"},
+  {"actor":"user","kind":"input","text":"DPAA 반영했으니 구현 승인합니다."},
+  {"actor":"assistant","kind":"tool_call","tool":"bash","command":"git push origin HEAD","expect_blocked":"WORKFLOW PHASE"},
+  {"actor":"user","kind":"input","text":"구현 완료 확인. 코드리뷰 단계 승인합니다."},
+  {"actor":"user","kind":"input","text":"코드리뷰 guard 만족 확인. 리뷰 승인 단계로 진행 승인합니다."},
+  {"actor":"user","kind":"input","text":"문서화 단계 승인합니다."},
+  {"actor":"user","kind":"input","text":"커밋 단계 승인합니다."},
+  {"actor":"assistant","kind":"tool_call","tool":"bash","command":"git push origin HEAD","expect_blocked":"WORKFLOW PHASE"},
+  {"actor":"user","kind":"input","text":"push 단계 승인합니다."},
+  {"assistant_note":"In the real extension this push is allowed only because the user confirmed code review guard in code_review.","actor":"assistant","kind":"tool_call","tool":"bash","command":"git push origin HEAD","expect_allowed":true},
+  {"actor":"assistant","kind":"tool_call","tool":"bash","command":"git push origin HEAD","expect_blocked":"Push Review"}
+]

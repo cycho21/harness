@@ -5,8 +5,9 @@
  * Pi extension.
  *
  * Gates:
- *   1. Code Review Gate — require /skill:code-review before git commit
- *   2. Commit Message Gate — enforce Conventional Commits format
+ *   1. Push Review Gate — require explicit user confirmation of code review guard before git push
+ *   2. Workflow Workspace Gate — active workflow pushes must happen from the bound worktree/branch
+ *   3. Push Policy Scan — flag risky build/config/migration/Docker/CI/deletion/large-change pushes
  *
  * Additional behavior:
  *   - resources_discover: register bundled harness skills with Pi
@@ -15,12 +16,56 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
-import { execSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
+
+import {
+  addSkipToken,
+  advanceWorkflow,
+  clearPersistedWorkflow,
+  createArtifactSnapshot,
+  createWorkflow,
+  consumeSkipToken,
+  createWorkspaceCheckpoint,
+  formatArtifactSnapshotCreated,
+  formatGateBlocked,
+  formatLatestDpaaAudit,
+  formatLoadedWorkflowPrompt,
+  formatLoadedWorkflowTemplate,
+  formatPushPolicyScanBlocked,
+  formatWorkflowPrerequisiteScan,
+  formatWorkflowHistory,
+  formatWorkflowPrompt,
+  formatWorkflowStatus,
+  formatWorkflowTemplateList,
+  formatWorkspaceCheckpoints,
+  formatWorkspaceMismatch,
+  getBranch,
+  getGitRoot,
+  getUntestedClasses,
+  getWorkspaceStatusSignature,
+  hasGitDashC,
+  isApprovalText,
+  isGitPush,
+  listWorkflowTemplates,
+  loadPersistedWorkflow,
+  readWorkflowTemplate,
+  resolveWorkspaceCheckpoint,
+  restoreWorkspaceCheckpoint,
+  saveWorkflow,
+  scanPushPolicy,
+  scanWorkflowPrerequisites,
+  shouldOfferInputCheckpoint,
+  shortInputReason,
+  undoWorkflow,
+  redoWorkflow,
+  validateWorkflowWorkspace,
+  transitionWorkflow,
+  WORKFLOW_PHASES,
+  type WorkflowInstance,
+  type WorkflowPhase,
+  type WorkflowTemplate,
+} from "./workflow/core";
 
 // This file lives at: <harness-root>/.pi/extensions/workflow.ts
 const HARNESS_ROOT = path.resolve(__dirname, "../..");
@@ -29,13 +74,19 @@ export default function (pi: ExtensionAPI) {
   // ── In-memory state ────────────────────────────────────────────────────────
   // Process memory only: the LLM cannot forge this token through shell/file writes.
   const state = {
-    reviewResult: null as {
+    codeReviewGuardSatisfiedToken: null as {
       critical: number;
       major: number;
       minor: number;
       timestamp: number;
     } | null,
-    workflow: loadPersistedWorkflow(),
+    workflow: null as WorkflowInstance | null,
+    loadedWorkflowTemplate: null as WorkflowTemplate | null,
+    dpaaGuardSatisfiedToken: null as { workflowId: string; issuedAt: number; reason: string } | null,
+    codeQualityGuardSatisfiedToken: null as { workflowId: string; issuedAt: number; reason: string } | null,
+    pushExecutionGuardSatisfiedToken: null as { workflowId: string; issuedAt: number; reason: string } | null,
+    policyApprovals: [] as Array<{ timestamp: number; totalChanged: number; categories: string[] }>,
+    lastInputCheckpointSignature: null as string | null,
   };
 
   // ── resources_discover: register bundled harness skills ───────────────────
@@ -45,55 +96,50 @@ export default function (pi: ExtensionAPI) {
     return { skillPaths: [skillsPath] };
   });
 
-  // ── Tool: submit_review_result ─────────────────────────────────────────────
-  // The LLM must call this tool after completing the code-review skill.
-  // This creates the in-memory commit token; commits are blocked without it.
-  pi.registerTool({
-    name: "submit_review_result",
-    label: "리뷰 결과 제출",
-    description: [
-      "Call this tool after completing code review.",
-      "It creates the in-memory commit approval token.",
-      "Without this token, git commit is blocked at the infrastructure level.",
-      "Submit the exact Critical/Major/Minor issue counts from the review.",
-    ].join(" "),
-    parameters: Type.Object({
-      critical: Type.Number({ description: "Number of Critical issues; must be 0 to allow commit." }),
-      major:    Type.Number({ description: "Number of Major issues; must be 2 or fewer to allow commit." }),
-      minor:    Type.Number({ description: "Number of Minor issues." }),
-    }),
-    async execute(_id, params) {
-      state.reviewResult = { ...params, timestamp: Date.now() };
-
-      const ok = params.critical === 0 && params.major <= 2;
-      const verdict = ok ? "✅ 커밋 가능" : "❌ 이슈 수정 필요";
-      const lines = [
-        `리뷰 토큰 발급됨 [${verdict}]`,
-        `  Critical : ${params.critical}개  (기준: 0)`,
-        `  Major    : ${params.major}개  (기준: ≤2)`,
-        `  Minor    : ${params.minor}개`,
-        ok
-          ? "→ git commit 허용됩니다 (TTL 60분)"
-          : "→ 이슈 수정 후 /skill:code-review 재실행 후 커밋하세요",
-      ];
-      return {
-        content: [{ type: "text", text: lines.join("\n") }],
-        details: {},
-      };
-    },
-  });
-
   // ── Command: /workflow — advisory workflow state manager ──────────────────
   pi.registerCommand("workflow", {
-    description: "Manage the advisory interview → plan → implementation → review → push workflow state.",
+    description: "Manage the advisory interview → plan → implementation → push-with-review workflow state.",
     getArgumentCompletions: (prefix) => {
-      const commands = ["start", "approve", "status", "undo", "redo", "history", "abort", "state", "dpaa-audit"];
-      return commands
-        .filter((command) => command.startsWith(prefix))
+      const commands = ["start", "approve", "status", "list", "load", "unload", "undo", "redo", "history", "abort", "state", "snapshot", "checkpoint", "checkpoints", "restore", "skip", "dpaa-audit"];
+      const workflowIds = listWorkflowTemplates().map((template) => template.id);
+      return [...commands, ...workflowIds]
+        .filter((value) => value.startsWith(prefix))
         .map((value) => ({ value, label: value }));
     },
     handler: async (args, ctx) => {
       const [command = "status", ...rest] = args.trim().split(/\s+/).filter(Boolean);
+
+      const ensurePrerequisites = async (): Promise<boolean> => {
+        const scan = scanWorkflowPrerequisites();
+        if (!scan.ok) {
+          ctx.ui.notify([
+            formatWorkflowPrerequisiteScan(scan),
+            "",
+            "필수 workflow runtime 파일이 없어 진행할 수 없습니다.",
+          ].join("\n"), "warning");
+          return false;
+        }
+        if (scan.warnings.length === 0) return true;
+        if (!ctx.hasUI) {
+          ctx.ui.notify([
+            formatWorkflowPrerequisiteScan(scan),
+            "",
+            "경고 확인을 위한 대화형 UI가 없어 진행을 중단합니다.",
+          ].join("\n"), "warning");
+          return false;
+        }
+        return ctx.ui.confirm(
+          "Workflow prerequisite 경고 확인",
+          [
+            formatWorkflowPrerequisiteScan(scan),
+            "",
+            "위 경고가 있어도 workflow를 계속 진행하시겠습니까?",
+            "",
+            "예: 경고를 인지하고 계속 진행합니다.",
+            "아니오: workflow start/load를 중단합니다.",
+          ].join("\n"),
+        );
+      };
 
       if (command === "start") {
         if (state.workflow && state.workflow.phase !== "done") {
@@ -105,19 +151,93 @@ export default function (pi: ExtensionAPI) {
           return;
         }
 
+        if (!(await ensurePrerequisites())) return;
         state.workflow = createWorkflow(rest.join(" "));
         saveWorkflow(state.workflow);
-        ctx.ui.notify(formatWorkflowStatus(state.workflow), "info");
+        ctx.ui.notify([formatWorkflowStatus(state.workflow), "", formatLoadedWorkflowTemplate(state.loadedWorkflowTemplate)].join("\n"), "info");
+        return;
+      }
+
+      if (command === "list") {
+        ctx.ui.notify(formatWorkflowTemplateList(listWorkflowTemplates()), "info");
+        return;
+      }
+
+      if (command === "load") {
+        const id = rest[0];
+        if (!id) {
+          ctx.ui.notify("사용법: /workflow load <id>\n목록 확인: /workflow list", "warning");
+          return;
+        }
+        const template = readWorkflowTemplate(id);
+        if (!template) {
+          ctx.ui.notify(`workflow template을 찾지 못했습니다: ${id}\n목록 확인: /workflow list`, "warning");
+          return;
+        }
+        if (!(await ensurePrerequisites())) return;
+        state.loadedWorkflowTemplate = template;
+        ctx.ui.notify([
+          formatLoadedWorkflowTemplate(template),
+          "",
+          "이 workflow는 extension memory에만 load되었습니다.",
+          "LLM system prompt에는 다음 agent turn부터 주입됩니다.",
+          "workflow phase 권한은 변경하지 않습니다. 단계 진행은 /workflow start, /workflow approve, 자연어 승인 등 기존 규칙을 따릅니다.",
+        ].join("\n"), "info");
+        return;
+      }
+
+      if (command === "unload") {
+        state.loadedWorkflowTemplate = null;
+        ctx.ui.notify("Loaded workflow template을 memory에서 제거했습니다.", "info");
         return;
       }
 
       if (command === "approve") {
+        if (state.workflow?.phase === "code_review" && !state.codeReviewGuardSatisfiedToken) {
+          if (!ctx.hasUI) {
+            ctx.ui.notify("Code review guard requires interactive user confirmation before review_approved.", "warning");
+            return;
+          }
+          const approved = await ctx.ui.confirm(
+            "Code review guard 승인 확인",
+            [
+              "Code review guard를 만족했습니까?",
+              "",
+              "조건:",
+              "- Critical 이슈 = 0",
+              "- Major 이슈 ≤ 2",
+              "- 필요한 수정과 재리뷰 반복이 완료됨",
+              "- LLM이 결과를 작성/제출하지 않고 사용자가 직접 확인함",
+              "",
+              "예: code review guard satisfied token을 in-memory에 발급하고 codeQualityGuard를 실행합니다.",
+              "아니오: review_approved 전이를 차단하고 code_review에 머뭅니다.",
+            ].join("\n"),
+          );
+          if (!approved) return;
+          state.codeReviewGuardSatisfiedToken = { critical: 0, major: 0, minor: 0, timestamp: Date.now() };
+        }
+        const from = state.workflow?.phase ?? null;
+        const workflowId = state.workflow?.id ?? null;
         const result = await advanceWorkflow(state.workflow, "user_approved");
         if (!result.ok) {
           ctx.ui.notify(result.message, "warning");
           return;
         }
-        ctx.ui.notify(result.message, "info");
+        const to = state.workflow?.phase ?? null;
+        const notices: string[] = [result.message];
+        if (workflowId && from === "plan_review" && to === "implement") {
+          state.dpaaGuardSatisfiedToken = { workflowId, issuedAt: Date.now(), reason: "user_approved" };
+          notices.push("DPAA guard satisfied: DPAA guard satisfied token recorded in current-session memory.");
+        }
+        if (workflowId && from === "code_review" && to === "review_approved") {
+          state.codeQualityGuardSatisfiedToken = { workflowId, issuedAt: Date.now(), reason: "user_approved" };
+          notices.push("Code quality guard satisfied: code quality guard satisfied token recorded in current-session memory.");
+        }
+        if (workflowId && from === "commit" && to === "push") {
+          state.pushExecutionGuardSatisfiedToken = { workflowId, issuedAt: Date.now(), reason: "user_approved" };
+          notices.push("Push execution guard satisfied: push execution guard satisfied token recorded in current-session memory.");
+        }
+        ctx.ui.notify(notices.join("\n"), "info");
         return;
       }
 
@@ -143,16 +263,144 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
+      if (command === "snapshot") {
+        if (!state.workflow) {
+          ctx.ui.notify("진행 중인 workflow가 없습니다. /workflow start 를 먼저 실행하세요.", "warning");
+          return;
+        }
+        const workspace = validateWorkflowWorkspace(state.workflow);
+        if (!workspace.ok) {
+          ctx.ui.notify(formatWorkspaceMismatch(workspace), "warning");
+          return;
+        }
+        const reason = rest.join(" ").trim() || "manual snapshot";
+        const snapshot = createArtifactSnapshot(state.workflow, "manual", reason);
+        if (!snapshot) {
+          ctx.ui.notify("스냅샷할 spec/plan 파일이 없습니다. `.ai/interview/spec.md` 또는 `.ai/interview/plan.md`를 먼저 작성하세요.", "warning");
+          return;
+        }
+        ctx.ui.notify(formatArtifactSnapshotCreated(snapshot), "info");
+        return;
+      }
+
+      if (command === "checkpoint") {
+        if (!state.workflow) {
+          ctx.ui.notify("진행 중인 workflow가 없습니다. /workflow start 를 먼저 실행하세요.", "warning");
+          return;
+        }
+        const workspace = validateWorkflowWorkspace(state.workflow);
+        if (!workspace.ok) {
+          ctx.ui.notify(formatWorkspaceMismatch(workspace), "warning");
+          return;
+        }
+        const reason = rest.join(" ").trim() || "manual";
+        const checkpoint = createWorkspaceCheckpoint(state.workflow, reason);
+        state.lastInputCheckpointSignature = getWorkspaceStatusSignature(state.workflow.gitRoot);
+        ctx.ui.notify(checkpoint ? `Workspace checkpoint 생성: ${path.basename(checkpoint)}` : "Workspace checkpoint를 생성하지 못했습니다.", checkpoint ? "info" : "warning");
+        return;
+      }
+
+      if (command === "checkpoints") {
+        ctx.ui.notify(formatWorkspaceCheckpoints(state.workflow), "info");
+        return;
+      }
+
+      if (command === "restore") {
+        if (!state.workflow) {
+          ctx.ui.notify("진행 중인 workflow가 없습니다. /workflow start 를 먼저 실행하세요.", "warning");
+          return;
+        }
+        const workspace = validateWorkflowWorkspace(state.workflow);
+        if (!workspace.ok) {
+          ctx.ui.notify(formatWorkspaceMismatch(workspace), "warning");
+          return;
+        }
+        const checkpointId = rest[0];
+        const checkpoint = resolveWorkspaceCheckpoint(state.workflow, checkpointId);
+        if (!checkpoint) {
+          ctx.ui.notify("복구할 checkpoint를 찾지 못했습니다. /workflow checkpoints 로 목록을 확인하세요.", "warning");
+          return;
+        }
+        createWorkspaceCheckpoint(state.workflow, `before-restore-${path.basename(checkpoint)}`);
+        ctx.ui.notify(restoreWorkspaceCheckpoint(checkpoint), "info");
+        state.lastInputCheckpointSignature = getWorkspaceStatusSignature(state.workflow.gitRoot);
+        return;
+      }
+
+      if (command === "skip") {
+        const gate = rest[0] as "dpaa" | "code-quality" | "push-review" | "policy-scan" | undefined;
+        const reason = rest.slice(1).join(" ").trim();
+        if (!gate || !["dpaa", "code-quality", "push-review", "policy-scan"].includes(gate) || !reason) {
+          ctx.ui.notify("사용법: /workflow skip <dpaa|code-quality|push-review|policy-scan> <reason>", "warning");
+          return;
+        }
+        const ok = !ctx.hasUI || (await ctx.ui.confirm(
+          "Workflow gate 승인 확인",
+          [
+            `${gate} gate를 1회 건너뛰는 것을 승인하시겠습니까?`,
+            "",
+            `사유: ${reason}`,
+            "",
+            "예: 이번 1회에 한해 gate를 건너뛰고 계속 진행합니다.",
+            "아니오: 진행을 중단하고 gate를 유지합니다.",
+          ].join("\n"),
+        ));
+        if (!ok) return;
+        addSkipToken(gate, reason);
+        ctx.ui.notify(`${gate} gate skip token issued (one-time, TTL 10 minutes)`, "warning");
+        return;
+      }
+
       if (command === "abort") {
         if (!state.workflow) {
           ctx.ui.notify("진행 중인 workflow가 없습니다.", "info");
           return;
         }
-        const ok = !ctx.hasUI || (await ctx.ui.confirm("Abort workflow", `현재 workflow(${state.workflow.phase})를 종료할까요?`));
+        const ok = !ctx.hasUI || (await ctx.ui.confirm(
+          "Workflow 종료 승인 확인",
+          [
+            `현재 workflow(${state.workflow.phase})를 종료하시겠습니까?`,
+            "",
+            "예: in-memory workflow를 종료하고 persisted 참고 기록도 삭제합니다.",
+            "아니오: workflow를 유지합니다.",
+          ].join("\n"),
+        ));
         if (!ok) return;
         state.workflow = null;
+        state.dpaaGuardSatisfiedToken = null;
+        state.codeQualityGuardSatisfiedToken = null;
+        state.pushExecutionGuardSatisfiedToken = null;
         clearPersistedWorkflow();
         ctx.ui.notify("Workflow를 종료했습니다.", "info");
+        return;
+      }
+
+      if (command === "status") {
+        if (state.workflow) {
+          ctx.ui.notify([formatWorkflowStatus(state.workflow), "", formatGuardMemoryStatus(), "", formatLoadedWorkflowTemplate(state.loadedWorkflowTemplate)].join("\n"), "info");
+          return;
+        }
+
+        const persisted = loadPersistedWorkflow();
+        if (!persisted) {
+          ctx.ui.notify([formatWorkflowStatus(null), "", formatGuardMemoryStatus(), "", formatLoadedWorkflowTemplate(state.loadedWorkflowTemplate)].join("\n"), "info");
+          return;
+        }
+
+        ctx.ui.notify([
+          formatWorkflowStatus(null),
+          "",
+          formatGuardMemoryStatus(),
+          "",
+          formatLoadedWorkflowTemplate(state.loadedWorkflowTemplate),
+          "",
+          "참고: 이전 workflow 기록이 파일에 남아 있지만 자동 복구하지 않습니다.",
+          "파일 기록은 표시/감사용이며 gate 통과 권한으로 신뢰하지 않습니다.",
+          "계속하려면 사용자가 직접 명시 명령을 입력하세요:",
+          `  /workflow state ${persisted.phase}`,
+          `  # last workflow: ${persisted.title}`,
+          `  # updated: ${new Date(persisted.updatedAt).toISOString()}`,
+        ].join("\n"), "info");
         return;
       }
 
@@ -162,23 +410,104 @@ export default function (pi: ExtensionAPI) {
           ctx.ui.notify(`사용법: /workflow state <${WORKFLOW_PHASES.join("|")}>`, "warning");
           return;
         }
+        const recoveryClaims: Record<WorkflowPhase, string> = {
+          interview: "초기 interview 단계로 복구합니다. guard token은 발급하지 않습니다.",
+          plan: "요구사항 확인 후 plan 단계까지 진행했다고 확인합니다. guard token은 발급하지 않습니다.",
+          plan_review: "plan 작성 후 review 단계까지 진행했다고 확인합니다. DPAA는 아직 통과한 것으로 간주하지 않습니다.",
+          implement: "DPAA guard가 만족되어 implement 단계에 진입했다고 확인하고 DPAA token을 발급합니다.",
+          code_review: "DPAA guard가 만족되고 구현이 완료되어 code_review 단계에 진입했다고 확인합니다.",
+          review_approved: "DPAA, code quality, code review guard가 모두 만족되었다고 확인하고 관련 token을 발급합니다.",
+          document: "review_approved 이후 문서화 단계까지 진행했다고 확인하고 관련 token을 발급합니다.",
+          commit: "문서화까지 완료되어 commit 단계까지 진행했다고 확인하고 관련 token을 발급합니다.",
+          push: "DPAA, code quality, code review, commit approval이 완료되어 push 단계라고 확인하고 모든 push 전 guard token을 발급합니다.",
+          done: "workflow가 완료되었다고 표시합니다. 실행 권한 token은 발급하지 않습니다.",
+        };
+        const ok = !ctx.hasUI || (await ctx.ui.confirm(
+          "Workflow state 수동 변경 승인 확인",
+          [
+            `workflow memory 상태를 '${next}' 단계로 변경하시겠습니까?`,
+            "",
+            recoveryClaims[next],
+            "",
+            "예: 위 내용을 내가 확인하고 phase/token을 복구합니다.",
+            "아니오: phase와 token을 변경하지 않습니다.",
+            "",
+            "주의: 이 명령은 사용자의 명시적 복구 승인으로 간주됩니다. 자동 파일 복구는 여전히 신뢰하지 않습니다.",
+          ].join("\n"),
+        ));
+        if (!ok) return;
         if (!state.workflow) state.workflow = createWorkflow("manual");
         transitionWorkflow(state.workflow, next, "manual_override");
+        state.dpaaGuardSatisfiedToken = null;
+        state.codeQualityGuardSatisfiedToken = null;
+        state.pushExecutionGuardSatisfiedToken = null;
+        state.codeReviewGuardSatisfiedToken = null;
+        const phaseIndex = WORKFLOW_PHASES.indexOf(next);
+        const tokenNotices: string[] = [];
+        if (phaseIndex >= WORKFLOW_PHASES.indexOf("implement") && next !== "done") {
+          state.dpaaGuardSatisfiedToken = { workflowId: state.workflow.id, issuedAt: Date.now(), reason: "manual_state_restore" };
+          tokenNotices.push("DPAA guard satisfied → DPAA guard satisfied token 발급");
+        }
+        if (phaseIndex >= WORKFLOW_PHASES.indexOf("review_approved") && next !== "done") {
+          state.codeQualityGuardSatisfiedToken = { workflowId: state.workflow.id, issuedAt: Date.now(), reason: "manual_state_restore" };
+          state.codeReviewGuardSatisfiedToken = { critical: 0, major: 0, minor: 0, timestamp: Date.now() };
+          tokenNotices.push("Code quality guard satisfied → code quality guard satisfied token 발급");
+          tokenNotices.push("Code review guard satisfied → code review guard satisfied token 발급");
+        }
+        if (phaseIndex >= WORKFLOW_PHASES.indexOf("push") && next !== "done") {
+          state.pushExecutionGuardSatisfiedToken = { workflowId: state.workflow.id, issuedAt: Date.now(), reason: "manual_state_restore" };
+          tokenNotices.push("Push execution guard satisfied → push execution guard satisfied token 발급");
+        }
         saveWorkflow(state.workflow);
-        ctx.ui.notify(formatWorkflowStatus(state.workflow), "info");
+        ctx.ui.notify([
+          formatWorkflowStatus(state.workflow),
+          "",
+          tokenNotices.length > 0 ? `수동 state 복구 완료: ${tokenNotices.join(", ")}` : "수동 state 복구 완료: 발급할 권한 token 없음",
+          "",
+          formatGuardMemoryStatus(),
+          "",
+          formatLoadedWorkflowTemplate(state.loadedWorkflowTemplate),
+        ].join("\n"), "warning");
         return;
       }
 
-      ctx.ui.notify(formatWorkflowStatus(state.workflow), "info");
+      ctx.ui.notify([formatWorkflowStatus(state.workflow), "", formatGuardMemoryStatus(), "", formatLoadedWorkflowTemplate(state.loadedWorkflowTemplate)].join("\n"), "info");
     },
   });
 
-  // ── Natural approval: "응, 진행해" → workflow advance ─────────────────────
-  pi.on("input", async (event) => {
-    if (event.source === "extension") return { action: "continue" };
+  // ── User-input checkpoint prompt + natural approval handling ───────────────
+  pi.on("input", async (event, ctx) => {
+    // Natural-language workflow approvals are accepted only from text the user
+    // typed in the interactive editor. Assistant messages do not fire this
+    // event, and extension/RPC-injected messages must not advance phases.
+    if (event.source !== "interactive") return { action: "continue" };
     if (!state.workflow || state.workflow.phase === "done") return { action: "continue" };
+
+    if (shouldOfferInputCheckpoint(state.workflow, event.text, state.lastInputCheckpointSignature)) {
+      const ok = ctx.hasUI
+        ? await ctx.ui.confirm("Workspace checkpoint", "The git workspace has uncommitted changes. Create a checkpoint before handling this request?")
+        : false;
+      if (ok) {
+        createWorkspaceCheckpoint(state.workflow, `before-input-${shortInputReason(event.text)}`);
+        state.lastInputCheckpointSignature = getWorkspaceStatusSignature(state.workflow.gitRoot);
+      }
+    }
+
     if (!isApprovalText(event.text)) return { action: "continue" };
 
+    const from = state.workflow.phase;
+    if (from === "code_review" && !state.codeReviewGuardSatisfiedToken) {
+      return {
+        action: "transform",
+        text: [
+          event.text,
+          "",
+          "[Workflow] Interactive user approval was received, but Code review guard is not satisfied.",
+          "The user must explicitly confirm the code review guard via /workflow approve before review_approved.",
+        ].join("\n"),
+      };
+    }
+    const workflowId = state.workflow.id;
     const result = await advanceWorkflow(state.workflow, "natural_language_approval");
     if (!result.ok) {
       return {
@@ -186,119 +515,204 @@ export default function (pi: ExtensionAPI) {
         text: [
           event.text,
           "",
-          `[Workflow] Transition blocked: ${result.message}`,
+          `[Workflow] Interactive user approval was received, but transition was blocked: ${result.message}`,
           "Resolve the blocker before asking the user to approve the next phase again.",
         ].join("\n"),
       };
     }
+
+    const to = state.workflow.phase;
+    const notices: string[] = [
+      `[Workflow] Interactive user approval advanced the workflow: '${from}' → '${to}'.`,
+    ];
+    if (from === "plan_review" && to === "implement") {
+      state.dpaaGuardSatisfiedToken = { workflowId, issuedAt: Date.now(), reason: "natural_language_approval" };
+      notices.push("[Workflow] DPAA guard satisfied: DPAA guard satisfied token recorded in current-session memory.");
+    }
+    if (from === "code_review" && to === "review_approved") {
+      state.codeQualityGuardSatisfiedToken = { workflowId, issuedAt: Date.now(), reason: "natural_language_approval" };
+      notices.push("[Workflow] Code quality guard satisfied: code quality guard satisfied token recorded in current-session memory.");
+    }
+    if (from === "commit" && to === "push") {
+      state.pushExecutionGuardSatisfiedToken = { workflowId, issuedAt: Date.now(), reason: "natural_language_approval" };
+      notices.push("[Workflow] Push execution guard satisfied: push execution guard satisfied token recorded in current-session memory.");
+    }
+    notices.push("Proceed according to the current phase. Ask for user confirmation before moving to the next phase.");
 
     return {
       action: "transform",
       text: [
         event.text,
         "",
-        `[Workflow] User approval advanced the workflow to '${state.workflow.phase}'.`,
-        "Proceed according to the current phase. Ask for user confirmation before moving to the next phase.",
+        ...notices,
       ].join("\n"),
     };
   });
 
-  // ── Gate: tool_call(bash) → git commit 차단 ────────────────────────────────
-  pi.on("tool_call", async (event) => {
+  // ── Gate: tool_call(bash) → git push 차단 ─────────────────────────────────
+  pi.on("tool_call", async (event, ctx) => {
     if (event.toolName !== "bash") return;
 
     const cmd = String((event.input as any).command ?? "");
-    if (!isGitCommit(cmd)) return;
+    if (!isGitPush(cmd)) return;
 
-    // ── Gate 1: Conventional Commits 형식 검사 ──────────────────────────────
-    const rawMsg = extractCommitMessage(cmd);
-    if (rawMsg !== null && !isConventionalCommit(rawMsg)) {
+    if (state.workflow) {
+      if (hasGitDashC(cmd)) {
+        return {
+          block: true,
+          reason: [
+            "── 🧭 WORKFLOW WORKSPACE REQUIRED ─────",
+            "",
+            "  During an active workflow, `git -C <path>` cannot target another workspace.",
+            "  Run git commands from the worktree/cwd where this workflow started.",
+            "",
+            `  Workflow CWD: ${state.workflow.cwd}`,
+            `  Workflow Branch: ${state.workflow.branch}`,
+            "",
+            "──────────────────────────────────────",
+          ].join("\n"),
+        };
+      }
+
+      const workspace = validateWorkflowWorkspace(state.workflow);
+      if (!workspace.ok) {
+        return {
+          block: true,
+          reason: formatWorkspaceMismatch(workspace),
+        };
+      }
+
+      if (state.workflow.phase !== "push") {
+        return {
+          block: true,
+          reason: [
+            "── 🚦 WORKFLOW PHASE REQUIRED ────────",
+            "",
+            "  git push is allowed only during the push phase.",
+            "  Complete review/document/commit deliverables, then advance with /workflow approve or interactive natural-language approval.",
+            "",
+            `  Current phase: ${state.workflow.phase}`,
+            "  Required phase: push",
+            "",
+            "──────────────────────────────────────",
+          ].join("\n"),
+        };
+      }
+
+      if (state.pushExecutionGuardSatisfiedToken?.workflowId !== state.workflow.id) {
+        return {
+          block: true,
+          reason: formatGateBlocked({
+            gate: "Push Phase Authority",
+            why: "The workflow is in push, but this pi session has no in-memory push execution guard satisfied token.",
+            next: ["Return to the proper workflow phase", "Advance commit → push through /workflow approve or interactive natural-language approval", "Or explicitly restore with /workflow state push", "Retry git push after the token is issued"],
+          }),
+        };
+      }
+    }
+
+    const policySkip = consumeSkipToken("policy-scan");
+    if (!policySkip) {
+      const policyScan = scanPushPolicy();
+      if (!policyScan.ok) {
+        if (!ctx.hasUI) {
+          return {
+            block: true,
+            reason: [
+              formatPushPolicyScanBlocked(policyScan),
+              "",
+              "사용자 대화형 승인이 필요하지만 현재 UI를 사용할 수 없어 git push를 차단했습니다.",
+              "대화형 세션에서 다시 시도하거나, 사용자에게 명시 승인받은 뒤 `/workflow skip policy-scan <reason>`을 실행하세요.",
+            ].join("\n"),
+          };
+        }
+
+        const approved = await ctx.ui.confirm(
+          "Push policy scan 승인 확인",
+          [
+            formatPushPolicyScanBlocked(policyScan),
+            "",
+            "위 위험 변경 사항이 포함된 상태로 git push를 계속 진행하시겠습니까?",
+            "",
+            "예: 현재 git push를 계속 진행합니다.",
+            "아니오: git push를 차단하고 변경 검토를 요구합니다.",
+          ].join("\n"),
+        );
+
+        if (!approved) {
+          return {
+            block: true,
+            reason: "git push blocked: 사용자가 Push policy scan 경고에 대해 '예'로 승인하지 않았습니다.",
+          };
+        }
+
+        state.policyApprovals.push({
+          timestamp: Date.now(),
+          totalChanged: policyScan.totalChanged,
+          categories: policyScan.findings.map((finding) => finding.category),
+        });
+        if (state.policyApprovals.length > 20) state.policyApprovals.shift();
+      }
+    }
+
+    const skip = consumeSkipToken("push-review");
+    if (skip) {
+      state.codeReviewGuardSatisfiedToken = null;
+      return;
+    }
+
+    // ── Gate 1: code code review guard satisfied token 없음 ───────────────────────────
+    if (!state.codeReviewGuardSatisfiedToken) {
       return {
         block: true,
-        reason: [
-          "── 📝 COMMIT MESSAGE FORMAT ───────────",
-          "",
-          `  현재: "${rawMsg}"`,
-          `  필요: "<type>(<scope>): <description>"`,
-          "",
-          "  type: feat | fix | chore | refactor | docs | test | perf | ci | style | revert",
-          "  scope: 소문자 영숫자 + 하이픈 (선택)",
-          "  description: 1~100자",
-          "",
-          "──────────────────────────────────────",
-        ].join("\n"),
+        reason: formatGateBlocked({
+          gate: "Push Review",
+          why: "The push review token is missing before git push.",
+          next: ["Run /skill:code-review-gate", "Use /workflow approve in code_review so the user explicitly confirms the review guard", "Retry git push"],
+          skip: "/workflow skip push-review <reason>",
+        }),
       };
     }
 
-    // ── Gate 2: 코드 리뷰 토큰 없음 ─────────────────────────────────────────
-    if (!state.reviewResult) {
-      return {
-        block: true,
-        reason: [
-          "── 🔍 CODE REVIEW REQUIRED ────────────",
-          "",
-          "  커밋 전 코드 리뷰가 필요합니다.",
-          "",
-          "  ① /skill:code-review 실행",
-          "  ② 리뷰 완료 → submit_review_result 도구 호출",
-          "  ③ Critical 0 + Major ≤2 확인",
-          "  ④ 커밋 재시도",
-          "",
-          "  [파일 토큰 없음 — 메모리 토큰만 허용]",
-          "  bash로 파일 생성하는 방식의 우회는 동작하지 않습니다.",
-          "",
-          "──────────────────────────────────────",
-        ].join("\n"),
-      };
-    }
-
-    // ── Gate 3: TTL 만료 (60분) ──────────────────────────────────────────────
-    const ageMin = (Date.now() - state.reviewResult.timestamp) / 60_000;
+    // ── Gate 2: TTL 만료 (60분) ──────────────────────────────────────────────
+    const ageMin = (Date.now() - state.codeReviewGuardSatisfiedToken.timestamp) / 60_000;
     if (ageMin > 60) {
       const elapsed = Math.floor(ageMin);
-      state.reviewResult = null;
+      state.codeReviewGuardSatisfiedToken = null;
       return {
         block: true,
-        reason: [
-          `── ⏰ 리뷰 만료 (${elapsed}분 경과) ────────`,
-          "",
-          "  리뷰 토큰의 유효 시간(60분)이 초과되었습니다.",
-          "  /skill:code-review 를 다시 실행하세요.",
-          "",
-          "──────────────────────────────────────",
-        ].join("\n"),
+        reason: formatGateBlocked({
+          gate: "Push Review",
+          why: `The push review token expired after 60 minutes. (${elapsed} minutes elapsed)`,
+          next: ["Run /skill:code-review-gate again", "Use /workflow approve in code_review so the user explicitly confirms the review guard again", "Retry git push"],
+          skip: "/workflow skip push-review <reason>",
+        }),
       };
     }
 
-    // ── Gate 4: Critical / Major 기준 미달 ───────────────────────────────────
-    const { critical, major } = state.reviewResult;
+    // ── Gate 3: Critical / Major 기준 미달 ───────────────────────────────────
+    const { critical, major } = state.codeReviewGuardSatisfiedToken;
     if (critical > 0 || major > 2) {
-      const r = state.reviewResult;
-      state.reviewResult = null;
+      const r = state.codeReviewGuardSatisfiedToken;
+      state.codeReviewGuardSatisfiedToken = null;
       return {
         block: true,
-        reason: [
-          "── 🔍 CODE REVIEW 미통과 ────────────",
-          "",
-          `  Critical : ${r.critical}개  (기준: 0)`,
-          `  Major    : ${r.major}개  (기준: ≤2)`,
-          "",
-          "  ① 지적된 이슈 수정",
-          "  ② /skill:code-review 재실행",
-          "  ③ 커밋 재시도",
-          "",
-          "──────────────────────────────────────",
-        ].join("\n"),
+        reason: formatGateBlocked({
+          gate: "Push Review",
+          why: `The review did not meet the push threshold. Critical=${r.critical} (required 0), Major=${r.major} (required ≤2)`,
+          next: ["Fix the reported issues", "Run /skill:code-review-gate again", "Retry git push"],
+          skip: "/workflow skip push-review <reason>",
+        }),
       };
     }
 
-    // ✅ 모든 게이트 통과 → 토큰 소비 (단일 커밋에 1회만 유효)
-    state.reviewResult = null;
+    // ✅ 모든 게이트 통과 → 토큰 소비 (단일 push에 1회만 유효)
+    state.codeReviewGuardSatisfiedToken = null;
   });
 
   // ── session_start: 상태 초기화 + 세션 컨텍스트 알림 ───────────────────────
   pi.on("session_start", async (_event, ctx) => {
-    state.reviewResult = null;
+    state.codeReviewGuardSatisfiedToken = null;
 
     const root = getGitRoot();
     if (!root) return;
@@ -318,6 +732,21 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.notify(`Harness Gates 로드 | ${parts.join(" | ")}`, "info");
   });
 
+  function formatGuardMemoryStatus(): string {
+    const workflowId = state.workflow?.id;
+    const policyScan = scanPushPolicy();
+    const lastPolicy = state.policyApprovals.at(-1);
+    return [
+      "🧪 Guard memory/status",
+      `- DPAA guard: ${workflowId && state.dpaaGuardSatisfiedToken?.workflowId === workflowId ? "satisfied" : "absent"}`,
+      `- Code quality guard: ${workflowId && state.codeQualityGuardSatisfiedToken?.workflowId === workflowId ? "satisfied" : "absent"}`,
+      `- Code review guard: ${state.codeReviewGuardSatisfiedToken ? `satisfied (C=${state.codeReviewGuardSatisfiedToken.critical}, M=${state.codeReviewGuardSatisfiedToken.major}, m=${state.codeReviewGuardSatisfiedToken.minor})` : "absent"}`,
+      `- Push execution guard: ${workflowId && state.pushExecutionGuardSatisfiedToken?.workflowId === workflowId ? "satisfied" : "absent"}`,
+      `- Policy scan now: ${policyScan.ok ? `ok (${policyScan.totalChanged} changed)` : `confirmation required (${policyScan.findings.map((finding) => finding.category).join(", ")})`}`,
+      `- Last policy approval: ${lastPolicy ? `${new Date(lastPolicy.timestamp).toISOString()} / ${lastPolicy.totalChanged} changed / ${lastPolicy.categories.join(", ")}` : "none"}`,
+    ].join("\n");
+  }
+
   // ── before_agent_start: inject gate state into the system prompt ──────────
   //
   // System-prompt injection makes these constraints part of the model's rules,
@@ -326,580 +755,24 @@ export default function (pi: ExtensionAPI) {
     const root = getGitRoot();
     const branch = root ? getBranch(root) : "unknown";
 
-    let reviewStatus: string;
-    if (!state.reviewResult) {
-      reviewStatus = "not run ❌";
-    } else {
-      const ageMin = Math.floor((Date.now() - state.reviewResult.timestamp) / 60_000);
-      const { critical, major } = state.reviewResult;
-      reviewStatus = `completed ✅ (Critical: ${critical}, Major: ${major}, ${ageMin} min ago)`;
-    }
+    const authLines = [
+      "[Workflow Authority Memory]",
+      `DPAA guard satisfied token: ${state.workflow && state.dpaaGuardSatisfiedToken?.workflowId === state.workflow.id ? "present" : "absent"}`,
+      `Code quality guard satisfied token: ${state.workflow && state.codeQualityGuardSatisfiedToken?.workflowId === state.workflow.id ? "present" : "absent"}`,
+      `Code review guard satisfied token: ${state.codeReviewGuardSatisfiedToken ? "present" : "absent"}`,
+      `Push execution guard satisfied token: ${state.workflow && state.pushExecutionGuardSatisfiedToken?.workflowId === state.workflow.id ? "present" : "absent"}`,
+      `Policy scan approvals this session: ${state.policyApprovals.length}`,
+    ].join("\n");
 
     const injection = [
       "",
-      "[Harness Gate — Current State]",
+      "[Harness Context]",
       `Branch: ${branch}`,
-      `Code review token: ${reviewStatus}`,
-      "",
-      "[Workflow State — Persisted advisory]",
       formatWorkflowPrompt(state.workflow),
-      "",
-      "[Gate Rules — Infrastructure-enforced, not bypassable]",
-      "• Run /skill:code-review before git commit.",
-      "• After review, you must call submit_review_result.",
-      "  (This creates the in-memory token; commits are blocked without it.)",
-      "• The token exists only in process memory; creating files with bash cannot bypass the gate.",
-      "• Commit messages must follow Conventional Commits:",
-      "  <type>(<scope>): <description>",
+      authLines,
+      formatLoadedWorkflowPrompt(state.loadedWorkflowTemplate),
     ].join("\n");
 
     return { systemPrompt: event.systemPrompt + injection };
   });
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-type WorkflowPhase =
-  | "interview"
-  | "plan"
-  | "plan_review"
-  | "implement"
-  | "code_review"
-  | "document"
-  | "commit"
-  | "push"
-  | "done";
-
-type WorkflowTransition = {
-  from: WorkflowPhase;
-  to: WorkflowPhase;
-  reason: string;
-  timestamp: number;
-};
-
-type WorkflowInstance = {
-  id: string;
-  title: string;
-  phase: WorkflowPhase;
-  history: WorkflowTransition[];
-  undone: WorkflowTransition[];
-  startedAt: number;
-  updatedAt: number;
-};
-
-type DpaaReport = {
-  overall: number;
-  level: string;
-  findings: Array<{
-    layer: string;
-    rule: string;
-    line?: number;
-    message: string;
-    suggestion: string;
-  }>;
-};
-
-type DpaaRunReceipt = {
-  timestamp: string;
-  workflowId: string;
-  from: WorkflowPhase;
-  to: WorkflowPhase;
-  projectRoot: string;
-  planPath: string;
-  planSha256: string;
-  exitCode: number;
-  level: string;
-  overall: number;
-  findingsCount: number;
-  reportSha256: string;
-};
-
-const WORKFLOW_PHASES: WorkflowPhase[] = [
-  "interview",
-  "plan",
-  "plan_review",
-  "implement",
-  "code_review",
-  "document",
-  "commit",
-  "push",
-  "done",
-];
-
-function createWorkflow(title: string): WorkflowInstance {
-  const now = Date.now();
-  return {
-    id: `wf-${new Date(now).toISOString().replace(/[-:]/g, "").replace(/\..+/, "").replace("T", "-")}`,
-    title: title || "workflow",
-    phase: "interview",
-    history: [],
-    undone: [],
-    startedAt: now,
-    updatedAt: now,
-  };
-}
-
-function getNextPhase(phase: WorkflowPhase): WorkflowPhase | null {
-  const index = WORKFLOW_PHASES.indexOf(phase);
-  return index >= 0 ? WORKFLOW_PHASES[index + 1] ?? null : null;
-}
-
-function transitionWorkflow(workflow: WorkflowInstance, to: WorkflowPhase, reason: string): void {
-  const from = workflow.phase;
-  if (from !== to) {
-    workflow.history.push({ from, to, reason, timestamp: Date.now() });
-    workflow.undone = [];
-  }
-  workflow.phase = to;
-  workflow.updatedAt = Date.now();
-}
-
-async function advanceWorkflow(workflow: WorkflowInstance | null, reason: string): Promise<{ ok: boolean; message: string }> {
-  if (!workflow) return { ok: false, message: "진행 중인 workflow가 없습니다. /workflow start 를 먼저 실행하세요." };
-  const from = workflow.phase;
-  const next = getNextPhase(from);
-  if (!next) return { ok: false, message: `이미 마지막 단계입니다: ${workflow.phase}` };
-
-  const gate = await runPreTransitionGate(workflow, from, next);
-  if (!gate.ok) return gate;
-
-  transitionWorkflow(workflow, next, reason);
-  saveWorkflow(workflow);
-  return { ok: true, message: `Workflow 전이: ${from} → ${workflow.phase}` };
-}
-
-async function runPreTransitionGate(workflow: WorkflowInstance, from: WorkflowPhase, to: WorkflowPhase): Promise<{ ok: boolean; message: string }> {
-  if (from === "plan_review" && to === "implement") {
-    return runDpaaGate(workflow, from, to);
-  }
-  return { ok: true, message: "" };
-}
-
-function runDpaaGate(workflow: WorkflowInstance, from: WorkflowPhase, to: WorkflowPhase): { ok: boolean; message: string } {
-  const planPath = findPlanForDpaa();
-  if (!planPath) {
-    return {
-      ok: false,
-      message: [
-        "DPAA 검증을 실행할 plan 파일을 찾지 못했습니다.",
-        "`.ai/interview/plan.md` 또는 `docs/superpowers/plans/*.md`에 plan을 작성한 뒤 다시 승인하세요.",
-      ].join("\n"),
-    };
-  }
-
-  const reportPath = path.join(os.tmpdir(), `dpaa-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
-  let exitCode = 0;
-  try {
-    execSync(`python -m dpaa.cli "${escapeForDoubleQuotedArg(planPath)}" --output "${escapeForDoubleQuotedArg(reportPath)}" --no-text`, {
-      cwd: HARNESS_ROOT,
-      encoding: "utf-8",
-      stdio: "pipe",
-    });
-  } catch (error) {
-    // DPAA returns a non-zero exit code when ambiguity findings fail the gate.
-    // The JSON report is still written and is parsed below.
-    exitCode = typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : 1;
-  }
-
-  let report: DpaaReport;
-  let receipt: DpaaRunReceipt | null = null;
-  try {
-    report = JSON.parse(fs.readFileSync(reportPath, "utf-8")) as DpaaReport;
-    receipt = writeDpaaReceipt({ workflow, from, to, planPath, reportPath, report, exitCode });
-  } catch (error) {
-    return {
-      ok: false,
-      message: `DPAA report를 읽지 못했습니다: ${error instanceof Error ? error.message : String(error)}`,
-    };
-  } finally {
-    fs.rmSync(reportPath, { force: true });
-  }
-
-  if (report.level === "PASS") {
-    return { ok: true, message: "DPAA 검증 통과" };
-  }
-
-  const findings = report.findings.slice(0, 5).map((finding, index) => {
-    const line = finding.line ? `line ${finding.line}` : "line unknown";
-    return `${index + 1}. [${finding.layer}/${finding.rule}] ${line}: ${finding.message}\n   → ${finding.suggestion}`;
-  });
-
-  return {
-    ok: false,
-    message: [
-      banner("❌ DPAA 검증 실패"),
-      table([
-        ["항목", "값"],
-        ["결과", report.level],
-        ["Penalty", String(report.overall)],
-        ["대상 plan", path.relative(process.cwd(), planPath)],
-        ["검증 기록", receipt ? `${receipt.timestamp} / ${receipt.planSha256.slice(0, 12)}` : "저장 실패"],
-      ]),
-      "",
-      "➡️  남은 모호성을 추가 인터뷰로 보충한 뒤 영어 plan/spec을 수정하고 다시 승인하세요.",
-      "",
-      "상위 Findings",
-      "──────────────────────────────────────",
-      ...findings,
-    ].join("\n"),
-  };
-}
-
-function findPlanForDpaa(): string | null {
-  const directCandidates = [
-    path.join(process.cwd(), ".ai", "interview", "plan.md"),
-    path.join(process.cwd(), "docs", "superpowers", "plans", "plan.md"),
-  ];
-
-  for (const candidate of directCandidates) {
-    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
-  }
-
-  const planDir = path.join(process.cwd(), "docs", "superpowers", "plans");
-  if (!fs.existsSync(planDir) || !fs.statSync(planDir).isDirectory()) return null;
-
-  const plans = fs.readdirSync(planDir)
-    .filter((name) => name.endsWith(".md"))
-    .map((name) => path.join(planDir, name))
-    .filter((candidate) => fs.statSync(candidate).isFile())
-    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-
-  return plans[0] ?? null;
-}
-
-function escapeForDoubleQuotedArg(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
-}
-
-function loadPersistedWorkflow(): WorkflowInstance | null {
-  const file = getWorkflowStatePath();
-  if (!fs.existsSync(file)) return null;
-
-  try {
-    const workflow = JSON.parse(fs.readFileSync(file, "utf-8")) as WorkflowInstance;
-    if (!WORKFLOW_PHASES.includes(workflow.phase)) return null;
-    return workflow;
-  } catch {
-    return null;
-  }
-}
-
-function saveWorkflow(workflow: WorkflowInstance): void {
-  const file = getWorkflowStatePath();
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(workflow, null, 2), "utf-8");
-}
-
-function clearPersistedWorkflow(): void {
-  fs.rmSync(getWorkflowStatePath(), { force: true });
-}
-
-function getWorkflowStatePath(): string {
-  return path.join(getWorkflowStateDir(), "state.json");
-}
-
-function writeDpaaReceipt(args: {
-  workflow: WorkflowInstance;
-  from: WorkflowPhase;
-  to: WorkflowPhase;
-  planPath: string;
-  reportPath: string;
-  report: DpaaReport;
-  exitCode: number;
-}): DpaaRunReceipt {
-  const receipt: DpaaRunReceipt = {
-    timestamp: new Date().toISOString(),
-    workflowId: args.workflow.id,
-    from: args.from,
-    to: args.to,
-    projectRoot: process.cwd(),
-    planPath: args.planPath,
-    planSha256: sha256File(args.planPath),
-    exitCode: args.exitCode,
-    level: args.report.level,
-    overall: args.report.overall,
-    findingsCount: args.report.findings.length,
-    reportSha256: sha256File(args.reportPath),
-  };
-
-  const dir = getDpaaReceiptDir();
-  fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, `${Date.now()}-${receipt.level.toLowerCase()}.json`);
-  fs.writeFileSync(file, JSON.stringify(receipt, null, 2), "utf-8");
-  return receipt;
-}
-
-function formatLatestDpaaAudit(): string {
-  const receipt = readLatestDpaaReceipt();
-  if (!receipt) {
-    return "⚪ DPAA 실행 기록이 없습니다.";
-  }
-
-  const icon = receipt.level === "PASS" ? "✅" : receipt.level === "WARN" ? "⚠️" : "❌";
-  return [
-    banner(`${icon} 최근 DPAA 실행 기록`),
-    table([
-      ["항목", "값"],
-      ["시간", receipt.timestamp],
-      ["Workflow", receipt.workflowId],
-      ["전이", `${receipt.from} → ${receipt.to}`],
-      ["결과", receipt.level],
-      ["Penalty", `${receipt.overall} (낮을수록 좋음)`],
-      ["Exit code", String(receipt.exitCode)],
-      ["Findings", String(receipt.findingsCount)],
-      ["Plan", path.relative(process.cwd(), receipt.planPath)],
-      ["Plan hash", receipt.planSha256],
-      ["Report hash", receipt.reportSha256],
-    ]),
-  ].join("\n");
-}
-
-function readLatestDpaaReceipt(): DpaaRunReceipt | null {
-  const dir = getDpaaReceiptDir();
-  if (!fs.existsSync(dir)) return null;
-
-  const files = fs.readdirSync(dir)
-    .filter((name) => name.endsWith(".json"))
-    .map((name) => path.join(dir, name))
-    .filter((file) => fs.statSync(file).isFile())
-    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-
-  if (!files[0]) return null;
-  return JSON.parse(fs.readFileSync(files[0], "utf-8")) as DpaaRunReceipt;
-}
-
-function getDpaaReceiptDir(): string {
-  return path.join(getWorkflowStateDir(), "dpaa-runs");
-}
-
-function getWorkflowStateDir(): string {
-  return path.join(getAgentDir(), "workflow-state", projectHash(process.cwd()));
-}
-
-function getAgentDir(): string {
-  return process.env.PI_CODING_AGENT_DIR ?? path.join(os.homedir(), ".pi", "agent");
-}
-
-function projectHash(root: string): string {
-  return createHash("sha256").update(path.resolve(root)).digest("hex").slice(0, 16);
-}
-
-function sha256File(file: string): string {
-  return createHash("sha256").update(fs.readFileSync(file)).digest("hex");
-}
-
-function undoWorkflow(workflow: WorkflowInstance | null): { ok: boolean; message: string } {
-  if (!workflow) return { ok: false, message: "진행 중인 workflow가 없습니다." };
-  const last = workflow.history.pop();
-  if (!last) return { ok: false, message: "되돌릴 workflow 전이가 없습니다." };
-  workflow.phase = last.from;
-  workflow.undone.push(last);
-  workflow.updatedAt = Date.now();
-  saveWorkflow(workflow);
-  return { ok: true, message: `Workflow undo: ${last.to} → ${last.from}` };
-}
-
-function redoWorkflow(workflow: WorkflowInstance | null): { ok: boolean; message: string } {
-  if (!workflow) return { ok: false, message: "진행 중인 workflow가 없습니다." };
-  const next = workflow.undone.pop();
-  if (!next) return { ok: false, message: "다시 실행할 workflow 전이가 없습니다." };
-  workflow.phase = next.to;
-  workflow.history.push(next);
-  workflow.updatedAt = Date.now();
-  saveWorkflow(workflow);
-  return { ok: true, message: `Workflow redo: ${next.from} → ${next.to}` };
-}
-
-function formatWorkflowStatus(workflow: WorkflowInstance | null): string {
-  if (!workflow) {
-    return [
-      banner("⚪ Workflow 없음"),
-      "시작: /workflow start <목표>",
-    ].join("\n");
-  }
-  const next = getNextPhase(workflow.phase);
-  return [
-    banner("🧭 Workflow 상태"),
-    table([
-      ["항목", "값"],
-      ["ID", workflow.id],
-      ["목표", workflow.title],
-      ["현재 단계", workflow.phase],
-      ["다음 단계", next ?? "없음"],
-      ["Undo 가능", workflow.history.length > 0 ? "yes" : "no"],
-      ["Redo 가능", workflow.undone.length > 0 ? "yes" : "no"],
-    ]),
-  ].join("\n");
-}
-
-function formatWorkflowHistory(workflow: WorkflowInstance | null): string {
-  if (!workflow) return "⚪ 진행 중인 workflow가 없습니다.";
-  if (workflow.history.length === 0) return "⚪ Workflow 전이 이력이 없습니다.";
-  return [
-    banner("🕘 Workflow 전이 이력"),
-    table([
-      ["#", "전이", "사유"],
-      ...workflow.history.map((item, index) => [String(index + 1), `${item.from} → ${item.to}`, item.reason]),
-    ]),
-  ].join("\n");
-}
-
-function banner(title: string): string {
-  const width = Math.max(36, displayWidth(title) + 2);
-  return [
-    `╔${"═".repeat(width)}╗`,
-    `║ ${padDisplay(title, width - 1)}║`,
-    `╚${"═".repeat(width)}╝`,
-  ].join("\n");
-}
-
-function table(rows: string[][]): string {
-  const widths = rows[0].map((_, column) => Math.max(...rows.map((row) => displayWidth(String(row[column] ?? "")))));
-  return rows.map((row, index) => {
-    const line = `| ${row.map((cell, column) => padDisplay(String(cell ?? ""), widths[column])).join(" | ")} |`;
-    if (index !== 0) return line;
-    const separator = `| ${widths.map((width) => "-".repeat(width)).join(" | ")} |`;
-    return `${line}\n${separator}`;
-  }).join("\n");
-}
-
-function padDisplay(value: string, width: number): string {
-  return value + " ".repeat(Math.max(0, width - displayWidth(value)));
-}
-
-function displayWidth(value: string): number {
-  let width = 0;
-  for (const char of Array.from(value)) {
-    width += isWideChar(char) ? 2 : 1;
-  }
-  return width;
-}
-
-function isWideChar(char: string): boolean {
-  const code = char.codePointAt(0) ?? 0;
-  return (
-    (code >= 0x1100 && code <= 0x11ff) ||
-    (code >= 0x2e80 && code <= 0xa4cf) ||
-    (code >= 0xac00 && code <= 0xd7a3) ||
-    (code >= 0xf900 && code <= 0xfaff) ||
-    (code >= 0xfe10 && code <= 0xfe19) ||
-    (code >= 0xfe30 && code <= 0xfe6f) ||
-    (code >= 0xff00 && code <= 0xff60) ||
-    (code >= 0xffe0 && code <= 0xffe6) ||
-    (code >= 0x1f000 && code <= 0x1faff)
-  );
-}
-
-function formatWorkflowPrompt(workflow: WorkflowInstance | null): string {
-  if (!workflow) {
-    return [
-      "• No active workflow.",
-      "• For procedural work, suggest /workflow start <goal> to the user.",
-    ].join("\n");
-  }
-  const next = getNextPhase(workflow.phase);
-  const lines = [
-    `• Current phase: ${workflow.phase}`,
-    `• Next phase: ${next ?? "none"}`,
-    "• Present the current phase deliverable first, then ask for user confirmation before advancing.",
-    "• The user can approve the next transition with /workflow approve or natural language such as '응, 진행해'.",
-    "• This workflow state is persisted outside the workspace; commit approval tokens are not persisted.",
-    "• This workflow is advisory except for enforced transition gates such as DPAA before implementation.",
-  ];
-  if (workflow.phase === "plan_review") {
-    lines.push("• Moving from plan_review to implement requires DPAA to pass against the current English plan.");
-    lines.push("• Ensure .ai/interview/spec.md and .ai/interview/plan.md are written in English for DPAA compatibility.");
-    lines.push("• If DPAA fails, conduct additional interview, update the English plan, and ask for approval again.");
-  }
-  return lines.join("\n");
-}
-
-function isApprovalText(text: string): boolean {
-  const normalized = text.trim().toLowerCase();
-  if (!normalized) return false;
-  const approvals = ["응", "네", "예", "좋아", "좋습니다", "진행해", "진행해줘", "계속해", "다음", "승인", "approve", "approved", "ok", "okay", "go ahead", "continue"];
-  return approvals.some((token) => normalized === token || normalized.includes(token));
-}
-
-/** bash 명령이 git commit인지 판별 (hook-common.sh의 is_git_commit과 동일 로직) */
-function isGitCommit(cmd: string): boolean {
-  const normalized = cmd
-    .replace(/'[^']*'/g, "")
-    .replace(/"[^"]*"/g, "")
-    .replace(/git\s+-C\s+\S+/g, "git");
-  return /(?:^|[|;&\s])git\s+commit(?:\s|$)/.test(normalized);
-}
-
-/** -m 옵션의 커밋 메시지 추출. heredoc/-F 방식이면 null 반환 (검사 불가) */
-function extractCommitMessage(cmd: string): string | null {
-  const sq = cmd.match(/-m\s+'([^']+)'/);
-  if (sq) return sq[1];
-  const dq = cmd.match(/-m\s+"([^"]+)"/);
-  if (dq) return dq[1];
-  return null;
-}
-
-/** Conventional Commits 형식 검사 (guard-commit-message.sh 패턴과 동일) */
-function isConventionalCommit(msg: string): boolean {
-  return /^(feat|fix|chore|refactor|docs|test|perf|ci|style|revert)(\([a-z0-9][a-z0-9-]*\))?!?:\s.{1,100}$/.test(
-    msg.trim()
-  );
-}
-
-function getGitRoot(): string | null {
-  try {
-    return execSync("git rev-parse --show-toplevel", {
-      encoding: "utf-8",
-      stdio: "pipe",
-    }).trim();
-  } catch {
-    return null;
-  }
-}
-
-function getBranch(root: string): string {
-  try {
-    return execSync(`git -C "${root}" rev-parse --abbrev-ref HEAD`, {
-      encoding: "utf-8",
-      stdio: "pipe",
-    }).trim();
-  } catch {
-    return "unknown";
-  }
-}
-
-/**
- * 테스트 없는 production Java 클래스 목록 반환.
- * hook-common.sh의 is_unimportant_file 패턴과 동일한 제외 규칙 적용.
- */
-function getUntestedClasses(root: string): string[] {
-  const EXCLUDE_SUFFIX =
-    /(DTO|Request|Response|Config|Configuration|Application|Properties|Exception|Error|Enum|Record|Constants|Client|Publisher|Checker|Aspect|Controller|Result)$/;
-  const EXCLUDE_PREFIX = /^Q[A-Z]|^Migration/;
-
-  try {
-    const out = execSync(
-      `find "${root}" -path "*/src/main/java/*.java" ! -name "package-info.java" 2>/dev/null`,
-      { encoding: "utf-8", stdio: "pipe" }
-    ).trim();
-    if (!out) return [];
-
-    const untested: string[] = [];
-    for (const mainFile of out.split("\n").filter(Boolean)) {
-      const className = path.basename(mainFile, ".java");
-      if (EXCLUDE_SUFFIX.test(className) || EXCLUDE_PREFIX.test(className)) continue;
-      if (/\/dto\/|\/entity\/|\/model\/|\/repository\//.test(mainFile)) continue;
-
-      const testDir = mainFile
-        .replace("/src/main/java/", "/src/test/java/")
-        .replace(`/${path.basename(mainFile)}`, "");
-      const testFile = path.join(testDir, `${className}Test.java`);
-      if (!fs.existsSync(testFile)) {
-        untested.push(className);
-      }
-    }
-    return untested;
-  } catch {
-    return [];
-  }
 }
