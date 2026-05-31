@@ -15,7 +15,7 @@ param(
     [string]$Repo = "https://github.com/cycho21/harness.git",
 
     [Parameter(Position = 1)]
-    [string]$Dest = (Get-Location).Path,
+    [string]$Dest = $(if ($env:HARNESS_DEST) { $env:HARNESS_DEST } else { (Get-Location).Path }),
 
     [string]$Ref = "",
 

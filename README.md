@@ -71,7 +71,7 @@ LLM 개발 세션에서 장기 기억을 사용할 수 있게 하는 작은 exte
 ### Windows PowerShell
 
 ```powershell
-$p=Join-Path $env:TEMP 'init-harness.ps1'; Invoke-WebRequest https://raw.githubusercontent.com/cycho21/harness/main/scripts/init-target-harness.ps1 -OutFile $p; powershell -NoProfile -ExecutionPolicy Bypass -File $p
+$p=Join-Path $env:TEMP 'init-harness.ps1'; Invoke-WebRequest https://raw.githubusercontent.com/cycho21/harness/main/scripts/init-target-harness.ps1 -OutFile $p; $env:HARNESS_DEST=(Get-Location).Path; powershell -NoProfile -ExecutionPolicy Bypass -File $p
 ```
 
 ### macOS/Linux
@@ -120,7 +120,7 @@ curl -fsSL https://raw.githubusercontent.com/cycho21/harness/main/scripts/init-t
 Windows PowerShell 예:
 
 ```powershell
-$p=Join-Path $env:TEMP 'init-harness.ps1'; Invoke-WebRequest https://raw.githubusercontent.com/cycho21/harness/main/scripts/init-target-harness.ps1 -OutFile $p; powershell -NoProfile -ExecutionPolicy Bypass -File $p -Component memory
+$p=Join-Path $env:TEMP 'init-harness.ps1'; Invoke-WebRequest https://raw.githubusercontent.com/cycho21/harness/main/scripts/init-target-harness.ps1 -OutFile $p; $env:HARNESS_DEST=(Get-Location).Path; powershell -NoProfile -ExecutionPolicy Bypass -File $p -Component memory
 ```
 
 ---
