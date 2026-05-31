@@ -396,32 +396,75 @@ export function runDpaaGate(workflow: WorkflowInstance, from: WorkflowPhase, to:
       return { ok: true, message: `DPAA check passed (SBADR skipped: ${sbadr.error ?? "report unreadable"})` };
     }
     const sr = sbadr.report;
-    if (sr.verdict === "FAIL") {
-      const findings = sr.findings.slice(0, 5).map((f, i) =>
-        `${i + 1}. [${f.type}] "${f.sentence_text.slice(0, 80)}"
+
+    const sbadrFindings = sr.findings.slice(0, 5).map((f, i) =>
+      `${i + 1}. [${f.type}] "${f.sentence_text.slice(0, 90)}"
    → ${f.detail}
    💡 ${f.suggestion}`,
-      );
+    );
+
+    if (sr.verdict === "FAIL") {
+      writeFieldLogEvent({
+        type: "gate.failed",
+        category: "dpaa",
+        severity: "blocker",
+        workflow,
+        fromPhase: from,
+        toPhase: to,
+        summary: `SBADR detected critical syntactic ambiguity in the English plan (score=${sr.score.toFixed(3)}).`,
+        expected: "English plan sentences must be syntactically unambiguous before implementation.",
+        actual: `SBADR verdict=FAIL, score=${sr.score.toFixed(3)}, ambiguous=${sr.ambiguous_count}/${sr.sentence_count} sentences`,
+        impact: "Ambiguous plan sentences lead to misimplementation. Implementation is blocked until ambiguity is resolved.",
+        primaryMessage: sr.findings[0]?.detail ?? "SBADR returned FAIL",
+        improvementKind: "dpaa-rule",
+        files: [{ path: checkedPlanPath, role: "input" }],
+        logExcerpt: sr.findings.slice(0, 5).map((f) => `[${f.type}] ${f.detail} → ${f.suggestion}`).join("\n"),
+      });
       return {
         ok: false,
         message: [
           formatGateBlocked({
             gate: "SBADR",
-            why: `SBADR detected critical syntactic ambiguity in the English plan (score=${sr.score.toFixed(3)}, ${sr.ambiguous_count}/${sr.sentence_count} sentences ambiguous).`,
-            next: ["Review the ambiguous sentences below", "Rephrase to remove structural ambiguity", "Run /workflow approve again"],
+            why: `영어 플랜에서 구문 모호성이 발견되었습니다 (score=${sr.score.toFixed(3)}, ${sr.ambiguous_count}/${sr.sentence_count} sentences ambiguous). 모호한 문장은 구현 단계에서 잘못된 해석으로 이어질 수 있습니다.`,
+            next: [
+              "아래 findings를 사용자에게 설명하고, 각 문장을 어떻게 수정할지 함께 결정하세요",
+              "또는 suggestion을 바탕으로 직접 수정 제안을 작성하고 사용자에게 확인을 받으세요",
+              "플랜 수정 후 /workflow approve를 다시 실행하세요",
+            ],
             skip: "/workflow skip dpaa <reason>",
           }),
+          table([
+            ["항목", "값"],
+            ["결과", sr.verdict],
+            ["Score", sr.score.toFixed(3)],
+            ["모호 문장", `${sr.ambiguous_count} / ${sr.sentence_count}`],
+            ["대상 plan", path.relative(process.cwd(), checkedPlanPath)],
+          ]),
           "",
           "상위 Findings",
           "──────────────────────────────────────",
-          ...findings,
+          ...sbadrFindings,
         ].join("\n"),
       };
     }
-    const sbadrNote = sr.verdict === "WARN"
-      ? `\n⚠️  SBADR WARN: ${sr.ambiguous_count}/${sr.sentence_count} sentences have potential syntactic ambiguity (score=${sr.score.toFixed(3)}). Review before implementation.`
-      : "";
-    return { ok: true, message: `DPAA check passed${sbadrNote}` };
+
+    if (sr.verdict === "WARN") {
+      return {
+        ok: true,
+        message: [
+          "DPAA check passed",
+          "",
+          `⚠️  SBADR WARN: 영어 플랜에 잠재적 구문 모호성이 있습니다 (score=${sr.score.toFixed(3)}, ${sr.ambiguous_count}/${sr.sentence_count} sentences).`,
+          "아래 항목을 사용자에게 보여주고, 수정이 필요한지 함께 확인하세요. 수정하지 않고 진행할 경우 이유를 명시하세요.",
+          "",
+          "상위 Findings",
+          "──────────────────────────────────────",
+          ...sbadrFindings,
+        ].join("\n"),
+      };
+    }
+
+    return { ok: true, message: "DPAA + SBADR check passed" };
     // ── end SBADR ─────────────────────────────────────────────────────────────
   }
 
