@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / "target" / ".pi" / "extensions" / "workflow" / "catalog.ts"
 CORE = ROOT / "target" / ".pi" / "extensions" / "workflow" / "core.ts"
 WORKFLOW_EXTENSION = ROOT / "target" / ".pi" / "extensions" / "workflow.ts"
-WORKFLOWS = ROOT / "target" / "workflows"
+WORKFLOWS = ROOT / "target" / ".pi" / "workflows"
 
 
 def test_workflow_catalog_lists_existing_templates():

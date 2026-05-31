@@ -11,12 +11,12 @@ def test_workflow_prerequisite_scan_checks_runtime_build_and_checkstyle_files():
 
     for needle in [
         "export function scanWorkflowPrerequisites",
-        "WORKFLOW.md",
+        ".pi/WORKFLOW.md",
         ".pi/extensions/workflow.ts",
         ".pi/skills",
-        "workflows",
-        "dpaa",
-        "pyproject.toml",
+        ".pi/workflows",
+        ".pi/dpaa",
+        ".pi/pyproject.toml",
         "build.gradle",
         "build.gradle.kts",
         "pom.xml",
@@ -33,6 +33,8 @@ def test_workflow_start_and_load_run_prerequisite_scan_with_explicit_yes_no_warn
 
     assert "const ensurePrerequisites = async" in workflow
     assert "scanWorkflowPrerequisites()" in workflow
+    gates = (ROOT / "target" / ".pi" / "extensions" / "workflow" / "gates.ts").read_text(encoding="utf-8")
+    assert '["python", "python3"]' in gates
     assert "if (!(await ensurePrerequisites())) return;" in workflow
     assert "Workflow prerequisite 경고 확인" in workflow
     assert "예: 경고를 인지하고 계속 진행합니다." in workflow

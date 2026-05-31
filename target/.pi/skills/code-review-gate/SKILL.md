@@ -1,37 +1,29 @@
 ---
 name: code-review-gate
-description: Use as the Pi harness commit-unlock review gate. Run the normal code-review process, count Critical/Major/Minor findings, and always call the submit_review_result tool so the in-memory commit token is created or a failing review is recorded. Output language is Korean.
+description: Run the review/fix loop during the `code_review` workflow phase. Report findings in Korean. Do not create approval tokens; the workflow extension asks the user to confirm guard satisfaction during `/workflow approve`.
 ---
 
-# Code Review Gate (Pi Harness)
+# Code Review Gate
 
-Run the same review process as `/skill:code-review`, then always call `submit_review_result` with the exact finding counts. This tool call is the only supported way to create the in-memory commit approval token.
+Use this when the workflow is in `code_review` or the user asks for pre-push review.
 
 ## Output Language
 
-Respond to the user in Korean.
+Respond in Korean.
 
-## Required Process
+## Process
 
-1. Perform the `/skill:code-review` review workflow.
-   - Inspect staged and unstaged changes with `git diff --cached` and `git diff`.
-   - Review across five dimensions: Correctness, Readability, Architecture, Security, Performance.
-   - Report findings in Korean.
+1. Run the normal `/skill:code-review` review process on staged and unstaged changes.
+2. Report findings by severity: Critical / Major / Minor.
+3. If Critical > 0 or Major > 2, stay in `code_review`: explain fixes, apply approved fixes, and review again.
+4. When the result satisfies the threshold, tell the user:
+   - Critical = 0
+   - Major ≤ 2
+   - remaining Minor issues, if any
+   - “다음 단계로 진행하려면 `/workflow approve`에서 직접 확인해주세요.”
 
-2. Count findings by severity.
-   - 🔴 Critical Issues section → `critical`
-   - 🟡 Major Issues section → `major`
-   - 🔵 Minor Issues section → `minor`
+## Rules
 
-3. Always call the tool below after the review is complete.
-   ```
-   submit_review_result(critical=<N>, major=<N>, minor=<N>)
-   ```
-
-## Non-Negotiable Rules
-
-- Do not skip `submit_review_result`.
-- The counts must honestly reflect the review result.
-- Call the tool even when Critical or Major findings exist; the harness uses the submitted counts to block the commit when needed.
-- The token is stored only in process memory and expires after 60 minutes.
-- Creating files in the workspace cannot bypass this gate.
+- Do not call or invent approval-token tools.
+- Do not claim the guard is approved on behalf of the user.
+- The extension, not the LLM, records guard satisfaction after explicit user confirmation.

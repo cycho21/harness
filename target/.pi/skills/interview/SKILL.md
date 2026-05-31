@@ -13,12 +13,45 @@ Interview → Spec/Plan → iterative review → subagent implementation → goa
 
 Respond to the user in Korean.
 
-Write machine-checked artifacts in English:
+Write two artifact sets:
 
-- `.ai/interview/spec.md` must be written in English.
-- `.ai/interview/plan.md` must be written in English.
+- `.ai/interview/spec.ko.md` and `.ai/interview/plan.ko.md` are the Korean source-of-truth documents for the user/team.
+- `.ai/interview/spec.md` and `.ai/interview/plan.md` are English normalized artifacts for DPAA.
 
-Reason: DPAA currently uses English-centered deterministic rules. Korean user-facing summaries are allowed, but the spec/plan files that DPAA checks must be English.
+Reason: DPAA currently uses English-centered deterministic rules. The Korean `.ko.md` files are the human-approved source of truth; the English `.md` files are machine-check translations. Do not change the English files independently from the Korean source.
+
+## Artifact Versioning
+
+Keep `.ai/interview/spec.ko.md`, `.ai/interview/plan.ko.md`, `.ai/interview/spec.md`, and `.ai/interview/plan.md` as the latest working copies, but preserve meaningful changes with snapshots:
+
+```text
+/workflow snapshot <reason>
+```
+
+Create a snapshot when any meaningful requirement or plan change occurs, including:
+
+- The user adds, removes, or changes a requirement.
+- Acceptance criteria change.
+- Scope or out-of-scope boundaries change.
+- Technology choices change.
+- User review changes the plan.
+- Implementation escalation changes requirements or design direction.
+- DPAA failure causes spec/plan repair.
+
+Do not create snapshots for typo-only or formatting-only edits.
+
+## Clarification Before Modification
+
+When you find ambiguity, conflicting requirements, DPAA findings, review feedback, or requirement changes:
+
+1. Do not immediately rewrite `.ai/interview/spec.ko.md`, `.ai/interview/plan.ko.md`, `.ai/interview/spec.md`, or `.ai/interview/plan.md`.
+2. First explain exactly what is wrong or unclear.
+3. Ask targeted clarification questions or present concrete options.
+4. Wait for the user's answer.
+5. Only after the user answers, update the spec/plan.
+6. If the answer changes requirements or the plan meaningfully, create a snapshot with `/workflow snapshot <reason>`.
+
+Never silently resolve ambiguity on behalf of the user.
 
 ## Trigger
 
@@ -76,13 +109,18 @@ Proceed to Phase 2 only when both are true:
 1. You are confident that a spec can be written without the implementer making additional decisions.
 2. Every acceptance criterion can be judged objectively as pass/fail.
 
-If you are not confident, ask another round. If the user says "just proceed", explicitly state the remaining ambiguity and ask for confirmation before moving on.
+If you are not confident, ask another round. If the user says "just proceed", explicitly state the remaining ambiguity and ask for confirmation before moving on. Do not silently choose an interpretation.
 
 ---
 
 ## Phase 2: Write Spec + Plan
 
-Create these files from the interview context. Both files must be written in English for DPAA compatibility. Continue explaining the result to the user in Korean.
+Create these files from the interview context:
+
+1. Write `.ai/interview/spec.ko.md` and `.ai/interview/plan.ko.md` in Korean for the user/team.
+2. Translate/normalize them into `.ai/interview/spec.md` and `.ai/interview/plan.md` in English for DPAA.
+3. Continue explaining the result to the user in Korean.
+4. After the initial Korean+English spec/plan set is written, create a snapshot with `/workflow snapshot initial`.
 
 ### `.ai/interview/spec.md` — WHAT
 
@@ -139,7 +177,7 @@ Check the plan in this order:
 - [ ] Out of Scope is explicit.
 - [ ] External dependencies, if any, are listed as risks.
 
-If any item fails, update the files before presenting them to the user. Also verify that the spec and plan files are written in English, not Korean.
+If any item fails, update the files before presenting them to the user. Also verify that the `.ko.md` files contain the Korean source of truth and the `.md` files contain faithful English DPAA translations.
 
 ### 3.2 User Review
 
@@ -152,9 +190,11 @@ Summarize the spec and plan, then ask:
 
 If the user requests changes:
 
-1. Update the spec/plan.
-2. Run self-review again.
-3. Present the updated version.
+1. Restate the requested change and confirm the interpretation if any ambiguity remains.
+2. Update the spec/plan only after the user's intent is clear.
+3. If the change is meaningful, create a snapshot with `/workflow snapshot <reason>`.
+4. Run self-review again.
+5. Present the updated version.
 
 Proceed to Phase 4 only after explicit approval such as "진행해", "좋아", "맞아", or "OK".
 
@@ -215,7 +255,7 @@ If all criteria are ✅:
 
 ```text
 ✅ 모든 완료 기준 충족
-→ 사용자 확인 후 push-with-review 진행 가능
+→ 사용자 확인 후 code_review 단계로 진행 가능
 ```
 
 If any criterion is ⚠️ or ❌:
@@ -230,7 +270,7 @@ Even if all criteria are ✅, ask:
 
 ```text
 모든 완료 기준이 충족되었습니다.
-push-with-review를 진행할까요?
+code_review 단계로 진행할까요?
 ```
 
 If the user asks to stop early, accept immediately.

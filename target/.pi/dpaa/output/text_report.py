@@ -1,6 +1,6 @@
 from dpaa.models import Report
 
-_ICONS = {"PASS": "✓", "WARN": "⚠", "FAIL": "✗"}
+_ICONS = {"PASS": "[PASS]", "WARN": "[WARN]", "FAIL": "[FAIL]"}
 
 
 def to_text(report: Report) -> str:
@@ -24,6 +24,6 @@ def to_text(report: Report) -> str:
                 lines.append(f"     line {f.line}: {f.text or ''}")
             lines.append(f"     {f.message}")
             if f.suggestion:
-                lines.append(f"     → Fix: {f.suggestion.splitlines()[0]}")
+                lines.append(f"     -> Fix: {f.suggestion.splitlines()[0]}")
 
     return "\n".join(lines)

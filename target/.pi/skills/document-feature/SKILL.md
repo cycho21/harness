@@ -1,6 +1,6 @@
 ---
 name: document-feature
-description: Use this skill whenever you finish implementing a feature on a feat/* branch, when the user asks to "document the feature" / "write feature docs" / "summarize this work", or as part of the push-with-review workflow. Always invoke this skill before pushing feat/* branches. Requires three sections — Context & Problem, Flow Diagram, and Decision Log — and prompts the user for items that cannot be inferred automatically. Output language is Korean; skill instructions are English.
+description: Use this skill in the `document` workflow phase for feature/API/schema/architecture-impacting changes, or when the user asks to "document the feature" / "write feature docs" / "summarize this work". Requires Context & Problem, Flow Diagram, and Decision Log; asks the user for facts that cannot be inferred. Output language is Korean; skill instructions are English.
 ---
 
 # Document Feature Skill

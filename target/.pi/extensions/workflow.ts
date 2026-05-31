@@ -98,7 +98,7 @@ export default function (pi: ExtensionAPI) {
 
   // ── Command: /workflow — advisory workflow state manager ──────────────────
   pi.registerCommand("workflow", {
-    description: "Manage the advisory interview → plan → implementation → push-with-review workflow state.",
+    description: "Manage the advisory interview → plan → implementation → review → document → commit → push workflow state.",
     getArgumentCompletions: (prefix) => {
       const commands = ["start", "approve", "status", "list", "load", "unload", "undo", "redo", "history", "abort", "state", "snapshot", "checkpoint", "checkpoints", "restore", "skip", "dpaa-audit"];
       const workflowIds = listWorkflowTemplates().map((template) => template.id);

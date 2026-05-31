@@ -20,7 +20,7 @@ Main session (user proxy)
   ├── owns the plan
   ├── owns design decisions
   ├── reviews subagent summaries
-  └── runs push-with-review at the end
+  └── returns to the explicit workflow phases for code_review/document/commit/push
 
 Subagent (implementer)
   ├── implements one task at a time
@@ -40,13 +40,11 @@ Do not use for a single-file change or trivial bug fix when direct implementatio
 
 ## Approval Protocol
 
-Invoking this skill counts as user approval for the full implementation cycle. Individual task commits may proceed automatically when all of these are satisfied:
+Invoking this skill approves only the subagent implementation/review loop. It does not approve later workflow phases.
 
-1. TDD evidence exists: a relevant test was written before implementation.
-2. Code review gate passes: Critical=0 and Major≤2 after `/code-review`.
-3. Commit message gate passes: Conventional Commits format.
+Subagents may work on scoped tasks and report results, but final `code_review → document → commit → push` progression remains controlled by `/workflow` and explicit user approval.
 
-No additional user approval is required for each task commit. However, if a subagent hits an architecture decision, design conflict, unclear requirement, or scope expansion, it must stop and escalate to the main session. It must not guess.
+If a subagent hits an architecture decision, design conflict, unclear requirement, or scope expansion, it must stop and escalate to the main session. It must not guess.
 
 ---
 
@@ -83,9 +81,9 @@ After a subagent completes, the main session should:
 
 Repeat Steps 1–2 until all tasks are complete.
 
-### Step 4: Ship
+### Step 4: Return to Workflow
 
-Invoke the `push-with-review` skill.
+When all tasks satisfy acceptance criteria, report completion and ask the user to continue to the `code_review` workflow phase.
 
 ---
 
@@ -121,13 +119,12 @@ Implement the following task in the DevCenter project.
    - Write the relevant test before production code.
    - The test file must contain a real @Test.
 
-2. Use Conventional Commits.
-   - Example: `feat(scope): add todo command`
-   - The Pi commit message gate blocks invalid messages.
+2. Use clear commit messages.
+   - Conventional Commits are recommended, but commit messages are not infrastructure-gated.
 
-3. Run code review before commit.
-   - Execute `/code-review` or the equivalent review gate workflow.
-   - The Pi code review gate blocks commits without a valid review token.
+3. Run review before reporting done.
+   - Execute `/code-review-gate` or `/code-review` on your scoped changes.
+   - Do not create guard tokens or claim user approval.
 
 4. Respect scope.
    - Modify only the specified files.
@@ -156,8 +153,8 @@ Task context:
 - Feature: <feature_description>
 - Acceptance criteria: <acceptance_criteria>
 
-Run the `/code-review` skill.
-Report the result in Korean and ensure the review gate result is submitted.
+Run the `/code-review-gate` skill.
+Report the result in Korean. Do not create guard tokens; user confirmation happens through `/workflow approve`.
 ```
 
 ### Fix Agent
@@ -174,7 +171,7 @@ The code review found these issues:
 Files: <file_list>
 
 Fix only the listed issues. Do not make adjacent changes.
-Run `/code-review` again after the fix and report the result.
+Run `/code-review-gate` again after the fix and report the result.
 ```
 
 ---
@@ -195,8 +192,7 @@ Run `/code-review` again after the fix and report the result.
 | Gate | Subagent impact |
 |------|-----------------|
 | TDD guidance | Subagents must write tests before implementation. |
-| Pi commit message gate | Subagent commit messages must follow Conventional Commits. |
-| Pi code review gate | Subagents must run review before each commit. |
+| Code review phase | Subagents may run `/code-review-gate`, but user confirmation happens in `/workflow approve`. |
 | Session context | Untested-class and branch context should inform subagent prompts. |
 
 ---
@@ -222,4 +218,4 @@ The main session's task state is the source of truth. If a subagent fails, keep 
 | TDD gate blocks implementation | Re-run with explicit instruction to write the test first. |
 | Code review finds Critical issues | Run a scoped fix agent, then review again. |
 | Subagent returns an architecture question | Main session decides from approved context, then resumes the subagent. |
-| push-with-review fails | Identify the cause and run a scoped fix agent. |
+| Later workflow guard fails | Identify the cause and run a scoped fix agent only after user approval. |

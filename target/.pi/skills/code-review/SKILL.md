@@ -1,11 +1,11 @@
 ---
 name: code-review
-description: For Java/Spring Boot pre-commit code review. Use this skill before any commit, when the user says "review", "check this code", "is this ready to commit", "코드 리뷰", "리뷰해줘", "커밋 전에 봐줘", "이거 괜찮아?", or as part of push-with-review workflow. Even simple changes benefit from review — use liberally. Output language is Korean; skill instructions are English.
+description: For Java/Spring Boot code review. Use this skill when the user says "review", "check this code", "is this ready to push", "코드 리뷰", "리뷰해줘", "푸시 전에 봐줘", "이거 괜찮아?", or during the `code_review` workflow phase. Even simple changes benefit from review. Output language is Korean; skill instructions are English.
 ---
 
 # Code Review Skill
 
-Perform thorough pre-commit code reviews focusing on code quality, bug detection, performance, naming conventions, and test coverage.
+Perform thorough pre-push code reviews focusing on code quality, bug detection, performance, naming conventions, and test coverage.
 
 > **출력 언어**: 모든 리뷰 결과와 피드백은 한국어로 작성합니다. 스킬 설명은 영어입니다.
 
@@ -176,53 +176,12 @@ User: "Check if this code is ready to commit"
 6. **Uncertainty → say so** — if uncertain, flag it and suggest investigation rather than guessing; "I'm not sure if X is intentional" is more useful than a wrong confident statement
 7. **Diff-aware** — focus on changed lines; never flag pre-existing code unless it directly interacts with the change
 
-## Review Result Artifact (Enforcement)
+## Workflow Integration
 
-After generating the Korean review report, write a result file for commit enforcement. The commit gate reads this file — if it's missing or expired, the commit is blocked.
+This skill produces the human-readable review report only. It does not unlock workflow guards by itself.
 
-This file is consumed by `Pi code review gate`.
+During `code_review`, use `/skill:code-review-gate` for the review/fix loop. The user confirms guard satisfaction through `/workflow approve`; the extension records the in-memory guard state and runs mechanical quality checks.
 
-**Location:** `tmp/review-result.json` (`.pi/` 밖 — 확인 불필요한 런타임 아티팩트)
-
-**Instructions:**
-
-1. Count the exact number of issues by severity from your review output:
-   - Critical: 🔴 Critical Issues section
-   - Major: 🟡 Major Issues section
-   - Minor: 🔵 Minor Issues section
-
-2. Write the JSON file using the Bash tool:
-   ```bash
-   ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-   mkdir -p "${ROOT}/tmp"
-   cat > "${ROOT}/tmp/review-result.json" << REVIEW_EOF
-   {
-     "critical": <count>,
-     "major": <count>,
-     "minor": <count>,
-     "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-   }
-   REVIEW_EOF
-   ```
-
-**Example:**
-If your review found:
-- 🔴 Critical: 0개
-- 🟡 Major: 2개
-- 🔵 Minor: 5개
-
-Write:
-```json
-{
-  "critical": 0,
-  "major": 2,
-  "minor": 5,
-  "timestamp": "2026-05-15T10:30:00Z"
-}
-```
-
-**Enforcement criteria (from personas/reviewer/AGENTS.md):**
-- ✅ Approve: Critical == 0 AND Major <= 2
-- ⚠️ Request Changes: Critical >= 1 OR Major >= 3
-
-**Always write this file**, even when the review passes. The commit gate validates and deletes it after use.
+Review threshold:
+- ✅ Satisfied: Critical == 0 AND Major <= 2
+- ⚠️ Not satisfied: Critical >= 1 OR Major >= 3

@@ -1,78 +1,66 @@
 ---
 name: dpaa
-description: Deterministic Plan Ambiguity Analyzer workflow. Use during plan_review, before implementation, or whenever a spec/plan may contain ambiguity. The workflow extension automatically enforces DPAA when moving from plan_review to implement; this skill explains how to interpret failures and repair the plan through additional interview. Output language is Korean.
+description: Interpret and repair DPAA failures during `plan_review`. The workflow extension mechanically enforces DPAA before `implement`. Output language is Korean.
 ---
 
 # DPAA Skill
 
-DPAA is the deterministic ambiguity gate for plans. It complements the interview skill:
-
-1. The LLM conducts a detailed interview to remove ambiguity.
-2. The spec and plan are written or updated in English.
-3. DPAA mechanically checks the plan.
-4. If DPAA fails, do not implement. Ask targeted follow-up questions, update the plan, and run/trigger DPAA again.
-
-DPAA currently uses English-centered deterministic rules. User-facing conversation may be Korean, but `.ai/interview/spec.md` and `.ai/interview/plan.md` must be English for reliable DPAA results.
-
-## Output Language
-
-Respond to the user in Korean.
-
-## When to Use
-
-Use this skill when:
-
-- The workflow is in `plan_review`.
-- The user asks whether ambiguity has been checked.
-- A plan/spec is ready and implementation is about to begin.
-- DPAA blocks transition to implementation.
-
-## Mechanical Gate
-
-The Pi workflow extension enforces this transition:
+DPAA is the deterministic ambiguity guard for plans. The extension enforces:
 
 ```text
 plan_review → implement requires DPAA PASS
 ```
 
-The extension looks for the current plan in this order:
+## Output Language
+
+Respond in Korean.
+
+## Artifacts
+
+- Korean source of truth: `.ai/interview/spec.ko.md`, `.ai/interview/plan.ko.md`
+- English DPAA inputs: `.ai/interview/spec.md`, `.ai/interview/plan.md`
+- English files must be faithful translations of the Korean source; do not change them independently.
+
+The extension checks the current plan from:
 
 1. `.ai/interview/plan.md`
 2. `docs/superpowers/plans/plan.md`
-3. The newest `docs/superpowers/plans/*.md`
+3. newest `docs/superpowers/plans/*.md`
 
-If DPAA fails, stay in `plan_review` and repair the plan before asking the user to approve again. If the plan is written in Korean, translate/rewrite the checked spec/plan artifacts into English before re-running DPAA.
+## When DPAA Blocks
 
-## Manual Command
+Do not implement and do not guess. For each relevant finding:
 
-When manual verification is needed, run from the project root:
+1. Explain the ambiguity in plain Korean.
+2. Ask a targeted follow-up question or offer concrete options.
+3. Wait for the user's answer.
+4. Update the Korean source artifacts first.
+5. Update the English DPAA artifacts as faithful translations.
+6. Ask the user to approve the transition again.
+
+Use `/workflow dpaa-audit` to inspect the latest receipt/snapshot when needed.
+
+## Manual Check
 
 ```bash
-python -m dpaa.cli .ai/interview/plan.md
+PYTHONPATH=.pi python -m dpaa.cli .ai/interview/plan.md
 ```
 
-or for a plan under `docs/superpowers/plans/`:
+If `python` is unavailable on macOS/Linux, use `python3`:
 
 ```bash
-python -m dpaa.cli docs/superpowers/plans/<plan-file>.md
+PYTHONPATH=.pi python3 -m dpaa.cli .ai/interview/plan.md
 ```
 
-## Failure Handling
+or:
 
-For each DPAA finding:
-
-1. Identify the ambiguous sentence or missing constraint.
-2. Ask the user a targeted follow-up question.
-3. Update the spec/plan with the clarified answer.
-4. Re-run DPAA or ask the user to approve the transition again.
-
-Do not treat DPAA failure as an implementation task. It is a requirements-quality failure.
+```bash
+PYTHONPATH=.pi python -m dpaa.cli docs/superpowers/plans/<plan-file>.md
+```
 
 ## Success Criteria
 
-Proceed to implementation only when:
-
-- The user has approved the plan.
-- DPAA reports `PASS`.
-- The checked spec/plan artifacts are written in English.
-- The plan has objective acceptance criteria and no unresolved placeholders.
+- User-approved plan.
+- DPAA PASS.
+- Korean source artifacts and English DPAA artifacts describe the same requirements.
+- Acceptance criteria are objective and no placeholders remain.

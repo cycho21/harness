@@ -5,7 +5,8 @@ import { banner, table } from "./ui";
 
 // This file lives at: <harness-root>/.pi/extensions/workflow/catalog.ts
 const HARNESS_ROOT = path.resolve(__dirname, "../../..");
-const WORKFLOW_DIR = path.join(HARNESS_ROOT, "workflows");
+const PI_ROOT = path.join(HARNESS_ROOT, ".pi");
+const WORKFLOW_DIR = path.join(PI_ROOT, "workflows");
 
 export type WorkflowTemplate = {
   id: string;
@@ -27,13 +28,13 @@ export function scanWorkflowPrerequisites(root: string = HARNESS_ROOT): Workflow
   const anyExists = (relativePaths: string[]) => relativePaths.some(exists);
 
   const required = [
-    "WORKFLOW.md",
+    ".pi/WORKFLOW.md",
     ".pi/extensions/workflow.ts",
     ".pi/extensions/workflow",
     ".pi/skills",
-    "workflows",
-    "dpaa",
-    "pyproject.toml",
+    ".pi/workflows",
+    ".pi/dpaa",
+    ".pi/pyproject.toml",
   ];
   const missingRequired = required.filter((item) => !exists(item));
 

@@ -9,8 +9,24 @@ import { table } from "./ui";
 
 // This file lives at: <harness-root>/.pi/extensions/workflow/gates.ts
 const HARNESS_ROOT = path.resolve(__dirname, "../../..");
+const PI_ROOT = path.join(HARNESS_ROOT, ".pi");
 
 export type WorkflowGate = "dpaa" | "code-quality" | "push-review" | "policy-scan";
+
+function resolvePythonCommand(): string {
+  for (const command of ["python", "python3"]) {
+    try {
+      execSync(`${command} -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)"`, {
+        encoding: "utf-8",
+        stdio: "pipe",
+      });
+      return command;
+    } catch {
+      // Try the next interpreter name.
+    }
+  }
+  return "python";
+}
 
 const skipTokens: Array<{
   gate: WorkflowGate;
@@ -109,11 +125,16 @@ export function runDpaaGate(workflow: WorkflowInstance, from: WorkflowPhase, to:
   const checkedPlanPath = snapshot?.planPath ?? planPath;
   const reportPath = path.join(os.tmpdir(), `dpaa-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
   let exitCode = 0;
+  const pythonCommand = resolvePythonCommand();
   try {
-    execSync(`python -m dpaa.cli "${escapeForDoubleQuotedArg(checkedPlanPath)}" --output "${escapeForDoubleQuotedArg(reportPath)}" --no-text`, {
+    execSync(`${pythonCommand} -m dpaa.cli "${escapeForDoubleQuotedArg(checkedPlanPath)}" --output "${escapeForDoubleQuotedArg(reportPath)}" --no-text`, {
       cwd: HARNESS_ROOT,
       encoding: "utf-8",
-      env: { ...process.env, PYTHONIOENCODING: "utf-8" },
+      env: {
+        ...process.env,
+        PYTHONIOENCODING: "utf-8",
+        PYTHONPATH: process.env.PYTHONPATH ? `${PI_ROOT}${path.delimiter}${process.env.PYTHONPATH}` : PI_ROOT,
+      },
       stdio: "pipe",
     });
   } catch (error) {

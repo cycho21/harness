@@ -1,5 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
+import sys
 import typer
 
 from dpaa.parser import MarkdownParser
@@ -10,6 +11,11 @@ from dpaa.layers import (
 from dpaa.scoring.scorer import Scorer
 from dpaa.output.json_report import to_json
 from dpaa.output.text_report import to_text
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 app = typer.Typer()
 
