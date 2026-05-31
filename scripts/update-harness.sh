@@ -79,6 +79,8 @@ managed_paths_for() {
         .pi/extensions/workflow.ts \
         .pi/extensions/workflow \
         .pi/dpaa \
+        .pi/sbadr \
+        .pi/setup_corenlp.sh \
         .pi/workflows \
         .pi/skills \
         .pi/personas \
