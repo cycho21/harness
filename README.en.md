@@ -38,6 +38,14 @@ After initialization, self-check the install:
 
 DPAA dependencies are installed automatically into `.pi/.venv/` the first time the DPAA gate runs. The generated venv is ignored by `.pi/.gitignore`.
 
+SBADR (Score-Based Ambiguity Detector and Resolver, ICSME 2020) is installed alongside DPAA under `.pi/sbadr/`. It detects syntactic ambiguity in English plan documents using Stanford CoreNLP dependency parsing (PP attachment, coordination scope, analytical, noun-phrase stacking). CoreNLP is not bundled; install it separately before first use:
+
+```bash
+bash .pi/setup_corenlp.sh
+```
+
+Requires Java 17+ and downloads ~500 MB. DPAA and SBADR are complementary: DPAA covers multi-layer plan quality (structural, referential, temporal, verification) in a rule-based, server-free way; SBADR adds deep syntactic NLP analysis for English text.
+
 Harness failures are logged locally under `.project-memory/harness/events.jsonl` when gates block or are explicitly skipped. Review and export redacted logs with:
 
 ```text
@@ -131,7 +139,7 @@ curl -fsSL https://raw.githubusercontent.com/cycho21/harness/main/scripts/update
 
 ## Customization boundary
 
-- Upstream-managed: `.pi/extensions/`, `.pi/dpaa/`, `.pi/workflows/`, `.pi/skills/`, `.pi/personas/`, `.pi/WORKFLOW.md`, `.pi/GOVERNANCE.md`, `.pi/pyproject.toml`, `.pi/schemas/`
+- Upstream-managed: `.pi/extensions/`, `.pi/dpaa/`, `.pi/sbadr/`, `.pi/setup_corenlp.sh`, `.pi/workflows/`, `.pi/skills/`, `.pi/personas/`, `.pi/WORKFLOW.md`, `.pi/GOVERNANCE.md`, `.pi/pyproject.toml`, `.pi/schemas/`
 - Project-owned: `AGENTS.md`, `.pi/config/`, `.pi/local/`, `.pi/LOCAL.md`
 - Generated/ignored: `.pi/.venv/`, `.pi/.cache/`, `.pi/dpaa-runs/`
 
@@ -158,6 +166,8 @@ Key runtime entrypoints:
 - `target/.pi/personas/`
 - `target/.pi/GOVERNANCE.md`
 - `target/.pi/dpaa/`
+- `target/.pi/sbadr/`
+- `target/.pi/setup_corenlp.sh`
 - `target/.pi/pyproject.toml`
 - `target/.pi/workflows/`
 - `target/.pi/schemas/harness-field-log-event.schema.json`

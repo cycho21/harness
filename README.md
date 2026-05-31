@@ -26,6 +26,8 @@ harness
 │  ├─ .pi/extensions/workflow/
 │  ├─ .pi/WORKFLOW.md
 │  ├─ .pi/dpaa/
+│  ├─ .pi/sbadr/
+│  ├─ .pi/setup_corenlp.sh
 │  ├─ .pi/workflows/
 │  ├─ .pi/skills/
 │  └─ .pi/schemas/harness-field-log-event.schema.json
@@ -43,12 +45,27 @@ harness
 
 - workflow phase 관리
 - DPAA plan ambiguity gate
+- SBADR 영어 플랜 구문 모호성 분석 (Stanford CoreNLP 기반)
 - code quality gate
 - push policy scan
 - workspace mismatch 방지
 - field failure log 생성
 - mechanical reminders 주입
 - extension 수정 시 사용자 승인 요구
+
+DPAA와 SBADR은 상호 보완적입니다.
+
+| | DPAA | SBADR |
+|---|---|---|
+| 방식 | rule-based, 서버 불필요 | Stanford CoreNLP 의존 파싱 |
+| 대상 | 한/영 플랜 다층 품질 검사 | 영어 플랜 구문 모호성 정밀 분석 |
+| 분석 범위 | structural, referential, temporal, verification 등 | PP attachment, coordination, analytical, noun phrase |
+
+CoreNLP는 별도 설치가 필요합니다 (Java 17+, ~500 MB):
+
+```bash
+bash .pi/setup_corenlp.sh
+```
 
 ### Memory component
 
@@ -440,6 +457,8 @@ semantic/vector retrieval
 ```text
 .pi/extensions/
 .pi/dpaa/
+.pi/sbadr/
+.pi/setup_corenlp.sh
 .pi/workflows/
 .pi/skills/
 .pi/personas/
