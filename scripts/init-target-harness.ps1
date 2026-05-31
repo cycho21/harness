@@ -56,7 +56,7 @@ function Test-ComponentSelected([string]$Rel) {
 
     foreach ($componentName in $components) {
         $roots = switch ($componentName) {
-            "workflow" { @("AGENTS.md", ".pi/.gitignore", ".pi/LOCAL.md", ".pi/WORKFLOW.md", ".pi/GOVERNANCE.md", ".pi/extensions/workflow.ts", ".pi/extensions/workflow", ".pi/dpaa", ".pi/workflows", ".pi/skills", ".pi/personas", ".pi/pyproject.toml", ".pi/schemas/harness-field-log-event.schema.json") }
+            "workflow" { @("AGENTS.md", ".pi/.gitignore", ".pi/LOCAL.md", ".pi/WORKFLOW.md", ".pi/GOVERNANCE.md", ".pi/extensions/workflow.ts", ".pi/extensions/workflow", ".pi/dpaa", ".pi/workflows", ".pi/skills", ".pi/personas", ".pi/pyproject.toml", ".pi/schemas/harness-field-log-event.schema.json", "tools/sbadr", "tools/setup_corenlp.sh", "tools/pyproject.toml") }
             "memory" { @("AGENTS.md", ".pi/.gitignore", ".pi/LOCAL.md", ".pi/extensions/memory.ts", ".pi/schemas/harness-memory-entry.schema.json") }
         }
         foreach ($root in $roots) {
