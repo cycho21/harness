@@ -17,6 +17,31 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
+COMPONENT_PATHS = {
+    "workflow": {
+        "AGENTS.md",
+        ".pi/.gitignore",
+        ".pi/LOCAL.md",
+        ".pi/WORKFLOW.md",
+        ".pi/GOVERNANCE.md",
+        ".pi/extensions/workflow.ts",
+        ".pi/extensions/workflow",
+        ".pi/dpaa",
+        ".pi/workflows",
+        ".pi/skills",
+        ".pi/personas",
+        ".pi/pyproject.toml",
+        ".pi/schemas/harness-field-log-event.schema.json",
+    },
+    "memory": {
+        "AGENTS.md",
+        ".pi/.gitignore",
+        ".pi/LOCAL.md",
+        ".pi/extensions/memory.ts",
+        ".pi/schemas/harness-memory-entry.schema.json",
+    },
+}
+
 DEFAULT_EXCLUDES = {
     "__pycache__",
     ".pytest_cache",
@@ -48,7 +73,21 @@ def is_relative_to(path: Path, other: Path) -> bool:
         return False
 
 
-def copy_harness(source: Path, dest: Path, *, force: bool, dry_run: bool) -> tuple[int, int, int]:
+def selected_roots(components: list[str]) -> set[str]:
+    if "all" in components:
+        components = ["workflow", "memory"]
+    roots: set[str] = set()
+    for component in components:
+        roots.update(COMPONENT_PATHS[component])
+    return roots
+
+
+def component_selected(rel: Path, roots: set[str]) -> bool:
+    rel_posix = rel.as_posix()
+    return any(rel_posix == root or rel_posix.startswith(root.rstrip("/") + "/") for root in roots)
+
+
+def copy_harness(source: Path, dest: Path, *, force: bool, dry_run: bool, components: list[str]) -> tuple[int, int, int]:
     copied = skipped = overwritten = 0
     source = source.resolve()
     dest = dest.resolve()
@@ -60,8 +99,12 @@ def copy_harness(source: Path, dest: Path, *, force: bool, dry_run: bool) -> tup
     if is_relative_to(source, dest):
         raise SystemExit("Refusing to initialize into a parent of the source template directory.")
 
+    roots = selected_roots(components)
+
     for src in iter_files(source):
         rel = src.relative_to(source)
+        if not component_selected(rel, roots):
+            continue
         dst = dest / rel
 
         if dst.exists() and not force:
@@ -110,6 +153,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="Print planned changes without writing files.",
     )
+    parser.add_argument(
+        "--component",
+        action="append",
+        choices=["all", "workflow", "memory"],
+        default=None,
+        help="Component to initialize. Repeatable. Default: all.",
+    )
     return parser.parse_args(argv)
 
 
@@ -118,8 +168,11 @@ def main(argv: list[str] | None = None) -> int:
     dest = args.dest.resolve()
     source = args.source.resolve()
 
+    components = args.component or ["all"]
+
     print(f"source: {source}")
     print(f"dest:   {dest}")
+    print(f"components: {', '.join(components)}")
     if args.dry_run:
         print("mode:   dry-run")
 
@@ -128,6 +181,7 @@ def main(argv: list[str] | None = None) -> int:
         dest,
         force=args.force,
         dry_run=args.dry_run,
+        components=components,
     )
 
     print(

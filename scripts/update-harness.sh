@@ -6,6 +6,7 @@ DEST="$(pwd)"
 REF=""
 DRY_RUN=0
 KEEP_TEMP=0
+COMPONENTS="all"
 
 usage() {
   cat <<'EOF'
@@ -18,6 +19,7 @@ Options:
   --dest DIR   Project root to update (default: current directory)
   --ref REF    Branch or tag to clone
   --dry-run    Print planned changes without writing files
+  --component NAME Component to update: all, workflow, memory (repeatable; default: all)
   --keep-temp  Keep temporary clone directory
   -h, --help   Show this help
 EOF
@@ -29,6 +31,7 @@ while [ "$#" -gt 0 ]; do
     --dest) DEST="$2"; shift 2 ;;
     --ref) REF="$2"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --component) if [ "$COMPONENTS" = "all" ]; then COMPONENTS="$2"; else COMPONENTS="$COMPONENTS $2"; fi; shift 2 ;;
     --keep-temp) KEEP_TEMP=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -49,25 +52,50 @@ trap cleanup EXIT INT TERM
 echo "repo:   $REPO"
 echo "dest:   $DEST"
 [ -n "$REF" ] && echo "ref:    $REF"
+echo "components: $COMPONENTS"
 [ "$DRY_RUN" -eq 1 ] && echo "mode:   dry-run"
 
 if [ -n "$REF" ]; then git clone --depth 1 --branch "$REF" "$REPO" "$CLONE_DIR"; else git clone --depth 1 "$REPO" "$CLONE_DIR"; fi
 TEMPLATE="$CLONE_DIR/target"
 
+managed_paths() {
+  for component in $COMPONENTS; do
+    if [ "$component" = "all" ]; then
+      managed_paths_for workflow
+      managed_paths_for memory
+    else
+      managed_paths_for "$component"
+    fi
+  done | awk '!seen[$0]++'
+}
+
+managed_paths_for() {
+  case "$1" in
+    workflow)
+      printf '%s\n' \
+        .pi/.gitignore \
+        .pi/WORKFLOW.md \
+        .pi/GOVERNANCE.md \
+        .pi/extensions/workflow.ts \
+        .pi/extensions/workflow \
+        .pi/dpaa \
+        .pi/workflows \
+        .pi/skills \
+        .pi/personas \
+        .pi/pyproject.toml \
+        .pi/schemas/harness-field-log-event.schema.json ;;
+    memory)
+      printf '%s\n' \
+        .pi/.gitignore \
+        .pi/extensions/memory.ts \
+        .pi/schemas/harness-memory-entry.schema.json ;;
+    *) echo "Unknown component: $1" >&2; exit 2 ;;
+  esac
+}
+
 UPDATED=0
 : > "$COUNTS"
-for MANAGED in \
-  .pi/.gitignore \
-  .pi/WORKFLOW.md \
-  .pi/GOVERNANCE.md \
-  .pi/extensions \
-  .pi/dpaa \
-  .pi/workflows \
-  .pi/skills \
-  .pi/personas \
-  .pi/pyproject.toml \
-  .pi/schemas
-  do
+managed_paths | while IFS= read -r MANAGED; do
     SRC_ROOT="$TEMPLATE/$MANAGED"
     [ -e "$SRC_ROOT" ] || continue
     if [ -d "$SRC_ROOT" ]; then

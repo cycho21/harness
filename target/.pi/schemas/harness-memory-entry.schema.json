@@ -1,0 +1,315 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cycho21/harness/schemas/harness-memory-entry.schema.json",
+  "title": "Harness External Memory Entry",
+  "description": "A typed, user-governable long-term memory record for LLM-augmented development. Memory entries are optimized for automatic retrieval, transparent use, and user-controlled correction/deletion.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "memoryId",
+    "createdAt",
+    "updatedAt",
+    "scope",
+    "type",
+    "status",
+    "confidence",
+    "importance",
+    "content",
+    "index",
+    "provenance",
+    "governance",
+    "privacy",
+    "lifecycle",
+    "rendering"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "memoryId": {
+      "type": "string",
+      "pattern": "^mem_[0-9A-Za-z_-]+$",
+      "description": "Stable unique id for user commands such as /memory show, edit, delete, disable."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "lastAccessedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level"],
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["personal", "project", "team", "workspace"]
+        },
+        "projectAnonymousId": {
+          "type": "string",
+          "description": "Stable anonymous project id; avoid storing customer/repo names."
+        },
+        "workspaceRoot": {
+          "type": "string",
+          "description": "Redacted workspace root if needed, e.g. <PROJECT_ROOT>."
+        },
+        "appliesToBranches": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "fact",
+        "decision",
+        "convention",
+        "preference",
+        "constraint",
+        "lesson",
+        "pitfall",
+        "workflow",
+        "domain-knowledge",
+        "open-question"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["candidate", "active", "disabled", "deprecated", "rejected", "superseded"]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "explicit"]
+    },
+    "importance": {
+      "type": "string",
+      "enum": ["low", "normal", "high", "critical"]
+    },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary"],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Short, retrieval-friendly statement. Should be directly usable in an LLM prompt."
+        },
+        "details": {
+          "type": "string",
+          "maxLength": 4000,
+          "description": "Optional details, rationale, examples, or constraints."
+        },
+        "do": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "dont": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "index": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["topics", "files", "appliesToPhases"],
+      "properties": {
+        "topics": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "description": "Retrieval tags such as workflow-gate, spring, testing, windows-path."
+        },
+        "files": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "description": "Repo-relative files or directories this memory is relevant to."
+        },
+        "symbols": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "description": "Class/function/API names related to this memory."
+        },
+        "appliesToPhases": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["interview", "plan", "plan_review", "implement", "code_review", "review_approved", "document", "commit", "push", "done", "any"]
+          },
+          "uniqueItems": true
+        },
+        "language": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "examples": [["typescript"], ["java", "spring"], ["python"]]
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "createdBy"],
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": ["user-explicit", "user-correction", "llm-inferred", "tool-observation", "test-failure", "workflow-event", "imported", "manual"]
+        },
+        "createdBy": {
+          "type": "string",
+          "enum": ["user", "llm", "extension", "import"]
+        },
+        "updatedBy": {
+          "type": "string",
+          "enum": ["user", "llm", "extension", "import"]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "summary"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["user-message", "file", "command", "test-output", "git-commit", "workflow-log", "external-doc", "other"]
+              },
+              "summary": { "type": "string", "maxLength": 1000 },
+              "ref": {
+                "type": "string",
+                "description": "Optional redacted file path, command label, commit hash, or opaque event id."
+              }
+            }
+          }
+        }
+      }
+    },
+    "governance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["userEditable", "userDeletable", "autoInject"],
+      "properties": {
+        "userEditable": { "type": "boolean" },
+        "userDeletable": { "type": "boolean" },
+        "autoInject": {
+          "type": "string",
+          "enum": ["never", "when-relevant", "always"],
+          "description": "Whether the extension may inject this memory into future prompts."
+        },
+        "requiresApprovalBeforeActive": {
+          "type": "boolean",
+          "description": "If true, candidate memory must be explicitly approved before becoming active."
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "supersedes": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^mem_[0-9A-Za-z_-]+$" },
+          "uniqueItems": true
+        },
+        "supersededBy": {
+          "type": "string",
+          "pattern": "^mem_[0-9A-Za-z_-]+$"
+        }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sensitivity", "redactionLevel", "exportable"],
+      "properties": {
+        "sensitivity": {
+          "type": "string",
+          "enum": ["public", "internal", "confidential", "secret"]
+        },
+        "redactionLevel": {
+          "type": "string",
+          "enum": ["none", "paths-only", "paths-and-identifiers", "full-summary-only"]
+        },
+        "exportable": { "type": "boolean" },
+        "containsSecrets": { "type": "boolean" },
+        "notes": { "type": "string", "maxLength": 1000 }
+      }
+    },
+    "retrieval": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "useCount": { "type": "integer", "minimum": 0 },
+        "lastScore": { "type": "number", "minimum": 0 },
+        "lastMatchedReason": {
+          "type": "string",
+          "enum": ["semantic", "keyword", "file", "phase", "recent", "manual", "unknown"]
+        }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["staleness", "conflictsWith"],
+      "properties": {
+        "lastVerifiedAt": { "type": "string", "format": "date-time" },
+        "validUntil": { "type": "string", "format": "date-time" },
+        "staleness": { "type": "string", "enum": ["fresh", "aging", "stale"] },
+        "conflictsWith": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^mem_[0-9A-Za-z_-]+$" },
+          "uniqueItems": true
+        },
+        "mergeGroup": { "type": "string" }
+      }
+    },
+    "rendering": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["useAs", "stableRenderHash"],
+      "properties": {
+        "useAs": { "type": "string", "enum": ["constraint", "decision", "preference", "warning", "context"] },
+        "stableRenderHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "status": { "const": "active" } }
+      },
+      "then": {
+        "properties": {
+          "governance": {
+            "properties": {
+              "autoInject": { "enum": ["when-relevant", "always"] }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "confidence": { "const": "low" } }
+      },
+      "then": {
+        "properties": {
+          "status": { "enum": ["candidate", "disabled", "rejected"] }
+        }
+      }
+    }
+  ]
+}

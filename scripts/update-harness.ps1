@@ -8,23 +8,45 @@ param(
     [string]$Repo = "https://github.com/cycho21/harness.git",
     [string]$Dest = (Get-Location).Path,
     [string]$Ref = "",
+    [ValidateSet("all", "workflow", "memory")]
+    [string[]]$Component = @("all"),
     [switch]$DryRun,
     [switch]$KeepTemp
 )
 
 $ErrorActionPreference = "Stop"
-$ManagedPaths = @(
-    ".pi/.gitignore",
-    ".pi/WORKFLOW.md",
-    ".pi/GOVERNANCE.md",
-    ".pi/extensions",
-    ".pi/dpaa",
-    ".pi/workflows",
-    ".pi/skills",
-    ".pi/personas",
-    ".pi/pyproject.toml",
-    ".pi/schemas"
-)
+function Get-ManagedPaths {
+    $components = $Component
+    if ($components -contains "all") { $components = @("workflow", "memory") }
+    $paths = New-Object System.Collections.Generic.List[string]
+    foreach ($componentName in $components) {
+        switch ($componentName) {
+            "workflow" {
+                @(
+                    ".pi/.gitignore",
+                    ".pi/WORKFLOW.md",
+                    ".pi/GOVERNANCE.md",
+                    ".pi/extensions/workflow.ts",
+                    ".pi/extensions/workflow",
+                    ".pi/dpaa",
+                    ".pi/workflows",
+                    ".pi/skills",
+                    ".pi/personas",
+                    ".pi/pyproject.toml",
+                    ".pi/schemas/harness-field-log-event.schema.json"
+                ) | ForEach-Object { $paths.Add($_) }
+            }
+            "memory" {
+                @(
+                    ".pi/.gitignore",
+                    ".pi/extensions/memory.ts",
+                    ".pi/schemas/harness-memory-entry.schema.json"
+                ) | ForEach-Object { $paths.Add($_) }
+            }
+        }
+    }
+    return $paths | Select-Object -Unique
+}
 $ExcludeDirs = @("__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".venv", ".cache")
 $ExcludeFiles = @(".DS_Store")
 
@@ -58,6 +80,7 @@ try {
     Write-Host "repo:   $Repo"
     Write-Host "dest:   $destPath"
     if ($Ref) { Write-Host "ref:    $Ref" }
+    Write-Host ("components: {0}" -f ($Component -join ", "))
     if ($DryRun) { Write-Host "mode:   dry-run" }
 
     $cloneArgs = @("clone", "--depth", "1")
@@ -68,7 +91,7 @@ try {
 
     $template = Join-Path $cloneDir "target"
     $updated = 0
-    foreach ($managed in $ManagedPaths) {
+    foreach ($managed in (Get-ManagedPaths)) {
         $source = Join-Path $template $managed
         if (-not (Test-Path -LiteralPath $source)) { continue }
 

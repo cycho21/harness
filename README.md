@@ -43,6 +43,27 @@ Harness failures are logged locally under `.project-memory/harness/events.jsonl`
 /workflow failures export
 ```
 
+External memory is stored separately under `.project-memory/memory/`. It starts as a small, user-governed memory layer: manually remember durable facts, search/list them, disable incorrect entries, and inspect what was injected into the prompt. Retrieval/injection tracking is recorded as ids/hashes/counts rather than raw prompts.
+
+```text
+/memory remember <durable project fact or decision>
+/memory list
+/memory search <query>
+/memory explain
+/memory stats
+/memory feedback <id> helpful|irrelevant|wrong|stale
+```
+
+Install only one component when needed:
+
+```bash
+# workflow only
+curl -fsSL https://raw.githubusercontent.com/cycho21/harness/main/scripts/init-target-harness.sh | sh -s -- --component workflow
+
+# memory only
+curl -fsSL https://raw.githubusercontent.com/cycho21/harness/main/scripts/init-target-harness.sh | sh -s -- --component memory
+```
+
 Optional arguments:
 
 Windows PowerShell:
@@ -56,6 +77,9 @@ $p=Join-Path $env:TEMP 'init-harness.ps1'; Invoke-WebRequest https://raw.githubu
 
 # Overwrite existing files intentionally
 $p=Join-Path $env:TEMP 'init-harness.ps1'; Invoke-WebRequest https://raw.githubusercontent.com/cycho21/harness/main/scripts/init-target-harness.ps1 -OutFile $p; powershell -NoProfile -ExecutionPolicy Bypass -File $p -Force
+
+# Install only one component
+$p=Join-Path $env:TEMP 'init-harness.ps1'; Invoke-WebRequest https://raw.githubusercontent.com/cycho21/harness/main/scripts/init-target-harness.ps1 -OutFile $p; powershell -NoProfile -ExecutionPolicy Bypass -File $p -Component memory
 ```
 
 macOS/Linux:
@@ -69,6 +93,9 @@ curl -fsSL https://raw.githubusercontent.com/cycho21/harness/main/scripts/init-t
 
 # Overwrite existing files intentionally
 curl -fsSL https://raw.githubusercontent.com/cycho21/harness/main/scripts/init-target-harness.sh | sh -s -- --force
+
+# Install only one component
+curl -fsSL https://raw.githubusercontent.com/cycho21/harness/main/scripts/init-target-harness.sh | sh -s -- --component memory
 ```
 
 ## Update an installed harness
@@ -89,9 +116,16 @@ curl -fsSL https://raw.githubusercontent.com/cycho21/harness/main/scripts/update
 
 Updates overwrite upstream-managed harness runtime files only. Project-owned files such as `AGENTS.md`, `.pi/config/`, and `.pi/local/` are preserved.
 
+Update only one component when needed:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cycho21/harness/main/scripts/update-harness.sh | sh -s -- --component workflow
+curl -fsSL https://raw.githubusercontent.com/cycho21/harness/main/scripts/update-harness.sh | sh -s -- --component memory
+```
+
 ## Customization boundary
 
-- Upstream-managed: `.pi/extensions/`, `.pi/dpaa/`, `.pi/workflows/`, `.pi/skills/`, `.pi/personas/`, `.pi/WORKFLOW.md`, `.pi/GOVERNANCE.md`, `.pi/pyproject.toml`
+- Upstream-managed: `.pi/extensions/`, `.pi/dpaa/`, `.pi/workflows/`, `.pi/skills/`, `.pi/personas/`, `.pi/WORKFLOW.md`, `.pi/GOVERNANCE.md`, `.pi/pyproject.toml`, `.pi/schemas/`
 - Project-owned: `AGENTS.md`, `.pi/config/`, `.pi/local/`, `.pi/LOCAL.md`
 - Generated/ignored: `.pi/.venv/`, `.pi/.cache/`, `.pi/dpaa-runs/`
 
@@ -113,6 +147,7 @@ Key runtime entrypoints:
 - `target/AGENTS.md`
 - `target/.pi/WORKFLOW.md`
 - `target/.pi/extensions/workflow.ts`
+- `target/.pi/extensions/memory.ts`
 - `target/.pi/skills/`
 - `target/.pi/personas/`
 - `target/.pi/GOVERNANCE.md`
@@ -120,3 +155,4 @@ Key runtime entrypoints:
 - `target/.pi/pyproject.toml`
 - `target/.pi/workflows/`
 - `target/.pi/schemas/harness-field-log-event.schema.json`
+- `target/.pi/schemas/harness-memory-entry.schema.json`

@@ -25,6 +25,9 @@ param(
 
     [switch]$DryRun,
 
+    [ValidateSet("all", "workflow", "memory")]
+    [string[]]$Component = @("all"),
+
     [switch]$KeepTemp
 )
 
@@ -44,6 +47,23 @@ function Get-RelativePath([string]$Base, [string]$Path) {
     $baseUri = New-Object System.Uri(($baseFull + [System.IO.Path]::DirectorySeparatorChar))
     $pathUri = New-Object System.Uri($pathFull)
     return [System.Uri]::UnescapeDataString($baseUri.MakeRelativeUri($pathUri).ToString()).Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+}
+
+function Test-ComponentSelected([string]$Rel) {
+    $normalized = $Rel.Replace('\\', '/')
+    $components = $Component
+    if ($components -contains "all") { $components = @("workflow", "memory") }
+
+    foreach ($componentName in $components) {
+        $roots = switch ($componentName) {
+            "workflow" { @("AGENTS.md", ".pi/.gitignore", ".pi/LOCAL.md", ".pi/WORKFLOW.md", ".pi/GOVERNANCE.md", ".pi/extensions/workflow.ts", ".pi/extensions/workflow", ".pi/dpaa", ".pi/workflows", ".pi/skills", ".pi/personas", ".pi/pyproject.toml", ".pi/schemas/harness-field-log-event.schema.json") }
+            "memory" { @("AGENTS.md", ".pi/.gitignore", ".pi/LOCAL.md", ".pi/extensions/memory.ts", ".pi/schemas/harness-memory-entry.schema.json") }
+        }
+        foreach ($root in $roots) {
+            if ($normalized -eq $root -or $normalized.StartsWith($root.TrimEnd('/') + "/")) { return $true }
+        }
+    }
+    return $false
 }
 
 function Test-Excluded([System.IO.FileSystemInfo]$Item, [string]$Root) {
@@ -78,6 +98,7 @@ try {
     Write-Host "repo:   $Repo"
     Write-Host "dest:   $destPath"
     if ($Ref) { Write-Host "ref:    $Ref" }
+    Write-Host ("components: {0}" -f ($Component -join ", "))
     if ($DryRun) { Write-Host "mode:   dry-run" }
 
     $cloneArgs = @("clone", "--depth", "1")
@@ -100,6 +121,7 @@ try {
         if (Test-Excluded $_ $source) { return }
 
         $rel = Get-RelativePath $source $_.FullName
+        if (-not (Test-ComponentSelected $rel)) { return }
         $target = Join-Path $destPath $rel
         $exists = Test-Path -LiteralPath $target
 
