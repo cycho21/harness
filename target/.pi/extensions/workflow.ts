@@ -738,9 +738,9 @@ export default function (pi: ExtensionAPI) {
     }
 
     const transitions = result.transitions ?? [{ from, to: state.workflow.phase }];
-    const path = transitions.map((item, index) => index === 0 ? `'${item.from}' → '${item.to}'` : `→ '${item.to}'`).join(" ");
+    const transitionPath = transitions.map((item, index) => index === 0 ? `'${item.from}' → '${item.to}'` : `→ '${item.to}'`).join(" ");
     const notices: string[] = [
-      `[Workflow] Interactive user approval advanced the workflow: ${path}.`,
+      `[Workflow] Interactive user approval advanced the workflow: ${transitionPath}.`,
     ];
     if (transitions.some((item) => item.from === "plan_review" && item.to === "implement")) {
       state.dpaaGuardSatisfiedToken = { workflowId, issuedAt: Date.now(), reason: "natural_language_approval" };
