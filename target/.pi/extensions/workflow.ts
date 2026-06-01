@@ -289,7 +289,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("workflow", {
     description: "Manage the advisory interview → plan → implementation → review → document → commit → push workflow state.",
     getArgumentCompletions: (prefix) => {
-      const commands = ["start", "approve", "status", "doctor", "failures", "list", "load", "unload", "undo", "redo", "history", "abort", "state", "snapshot", "checkpoint", "checkpoints", "restore", "skip", "dpaa-audit"];
+      const commands = ["start", "approve", "status", "doctor", "failures", "list", "templates", "load", "unload", "undo", "redo", "history", "abort", "state", "snapshot", "checkpoint", "checkpoints", "restore", "skip", "dpaa-audit"];
       const workflowIds = listWorkflowTemplates().map((template) => template.id);
       return [...commands, ...workflowIds]
         .filter((value) => value.startsWith(prefix))
@@ -364,6 +364,12 @@ export default function (pi: ExtensionAPI) {
       }
 
       if (command === "list") {
+        const activeOrPersisted = state.workflow ?? loadPersistedWorkflow();
+        ctx.ui.notify(formatWorkflowStatus(activeOrPersisted), "info");
+        return;
+      }
+
+      if (command === "templates") {
         ctx.ui.notify(formatWorkflowTemplateList(listWorkflowTemplates()), "info");
         return;
       }

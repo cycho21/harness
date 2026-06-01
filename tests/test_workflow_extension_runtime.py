@@ -18,10 +18,10 @@ def _run_node_runtime(script: str, tmp_path: Path) -> dict:
         ["node", "-e", script],
         cwd=ROOT,
         env=env,
-        text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         timeout=30,
+        encoding="utf-8",
     )
     assert result.returncode == 0, result.stderr
     return json.loads(result.stdout)

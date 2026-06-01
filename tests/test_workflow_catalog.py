@@ -24,7 +24,7 @@ def test_workflow_load_command_is_memory_only_and_prompt_injected():
     workflow = WORKFLOW_EXTENSION.read_text(encoding="utf-8")
     core = CORE.read_text(encoding="utf-8")
 
-    assert '"list", "load", "unload"' in workflow
+    assert '"list", "templates", "load", "unload"' in workflow
     assert "loadedWorkflowTemplate: null as WorkflowTemplate | null" in workflow
     assert "state.loadedWorkflowTemplate = template" in workflow
     assert "이 workflow는 extension memory에만 load되었습니다." in workflow
