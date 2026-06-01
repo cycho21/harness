@@ -91,7 +91,7 @@ export function phaseGuidance(phase: WorkflowPhase): string {
     case "plan":
       return "• Deliverable: produce/update the implementation plan; keep English DPAA artifacts faithful to the Korean sources.";
     case "plan_review":
-      return "• Deliverable: present the plan for approval. Approval to implement runs DPAA; if it fails, ask clarifying questions before editing artifacts.";
+      return "• Deliverable: present the plan for approval. Approval to implement runs DPAA then SBADR; if either fails, explain the findings to the user and ask clarifying questions before editing artifacts.";
     case "implement":
       return "• Deliverable: implement the approved plan only. Ask for approval before entering code_review.";
     case "code_review":

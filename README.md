@@ -61,10 +61,14 @@ DPAA와 SBADR은 상호 보완적입니다.
 | 대상 | 한/영 플랜 다층 품질 검사 | 영어 플랜 구문 모호성 정밀 분석 |
 | 분석 범위 | structural, referential, temporal, verification 등 | PP attachment, coordination, analytical, noun phrase |
 
-CoreNLP는 별도 설치가 필요합니다 (Java 17+, ~500 MB):
+CoreNLP는 별도 설치가 필요합니다 (Java 17+ 필수, ~500 MB). 쪵게이트 실행 시 자동 설치됩니다. 수동 설치:
 
 ```bash
+# macOS/Linux
 bash .pi/setup_corenlp.sh
+
+# Windows PowerShell
+powershell -ExecutionPolicy Bypass -File .pi/setup_corenlp.ps1
 ```
 
 ### Memory component
@@ -450,6 +454,14 @@ semantic/vector retrieval
 
 ## Customization boundary
 
+### 의존성
+
+| 의존성 | 용도 | 비고 |
+|---|---|---|
+| Python 3.10+ | DPAA, SBADR | 하네스가 venv 자동 생성 |
+| Java 17+ | SBADR (CoreNLP) | 하네스가 CoreNLP 자동 설치 |
+| git | 워크플로우 | 필수 |
+
 ### Upstream-managed
 
 업데이트 시 하네스가 관리하고 덮어쓸 수 있는 영역입니다.
@@ -459,6 +471,7 @@ semantic/vector retrieval
 .pi/dpaa/
 .pi/sbadr/
 .pi/setup_corenlp.sh
+.pi/setup_corenlp.ps1
 .pi/workflows/
 .pi/skills/
 .pi/personas/

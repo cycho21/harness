@@ -38,10 +38,14 @@ After initialization, self-check the install:
 
 DPAA dependencies are installed automatically into `.pi/.venv/` the first time the DPAA gate runs. The generated venv is ignored by `.pi/.gitignore`.
 
-SBADR (Score-Based Ambiguity Detector and Resolver, ICSME 2020) is installed alongside DPAA under `.pi/sbadr/`. It detects syntactic ambiguity in English plan documents using Stanford CoreNLP dependency parsing (PP attachment, coordination scope, analytical, noun-phrase stacking). CoreNLP is not bundled; install it separately before first use:
+SBADR (Score-Based Ambiguity Detector and Resolver, ICSME 2020) is installed alongside DPAA under `.pi/sbadr/`. It detects syntactic ambiguity in English plan documents using Stanford CoreNLP dependency parsing (PP attachment, coordination scope, analytical, noun-phrase stacking). CoreNLP is installed automatically on the first gate run. To install manually:
 
 ```bash
+# macOS/Linux
 bash .pi/setup_corenlp.sh
+
+# Windows PowerShell
+powershell -ExecutionPolicy Bypass -File .pi/setup_corenlp.ps1
 ```
 
 Requires Java 17+ and downloads ~500 MB. DPAA and SBADR are complementary: DPAA covers multi-layer plan quality (structural, referential, temporal, verification) in a rule-based, server-free way; SBADR adds deep syntactic NLP analysis for English text.
@@ -139,7 +143,15 @@ curl -fsSL https://raw.githubusercontent.com/cycho21/harness/main/scripts/update
 
 ## Customization boundary
 
-- Upstream-managed: `.pi/extensions/`, `.pi/dpaa/`, `.pi/sbadr/`, `.pi/setup_corenlp.sh`, `.pi/workflows/`, `.pi/skills/`, `.pi/personas/`, `.pi/WORKFLOW.md`, `.pi/GOVERNANCE.md`, `.pi/pyproject.toml`, `.pi/schemas/`
+**Dependencies:**
+
+| Dependency | Purpose | Notes |
+|---|---|---|
+| Python 3.10+ | DPAA, SBADR | venv auto-created by harness |
+| Java 17+ | SBADR (CoreNLP) | CoreNLP auto-installed on first gate run |
+| git | workflow | required |
+
+- Upstream-managed: `.pi/extensions/`, `.pi/dpaa/`, `.pi/sbadr/`, `.pi/setup_corenlp.sh`, `.pi/setup_corenlp.ps1`, `.pi/workflows/`, `.pi/skills/`, `.pi/personas/`, `.pi/WORKFLOW.md`, `.pi/GOVERNANCE.md`, `.pi/pyproject.toml`, `.pi/schemas/`
 - Project-owned: `AGENTS.md`, `.pi/config/`, `.pi/local/`, `.pi/LOCAL.md`
 - Generated/ignored: `.pi/.venv/`, `.pi/.cache/`, `.pi/dpaa-runs/`
 

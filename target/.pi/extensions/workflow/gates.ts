@@ -130,6 +130,20 @@ interface SbadrReport {
   findings: Array<{ type: string; sentence_text: string; detail: string; suggestion: string }>;
 }
 
+function canImportSbadr(command: string): boolean {
+  try {
+    execSync(`${quoteCommand(command)} -c "import sbadr.cli"`, {
+      cwd: HARNESS_ROOT,
+      encoding: "utf-8",
+      env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONPATH: process.env.PYTHONPATH ? `${PI_ROOT}${path.delimiter}${process.env.PYTHONPATH}` : PI_ROOT },
+      stdio: "pipe",
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function runSbadrAnalysis(pythonCommand: string, planPath: string): { ok: boolean; report: SbadrReport | null; error?: string } {
   const reportPath = path.join(os.tmpdir(), `sbadr-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
   try {
@@ -139,7 +153,7 @@ function runSbadrAnalysis(pythonCommand: string, planPath: string): { ok: boolea
         cwd: HARNESS_ROOT,
         encoding: "utf-8",
         env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONPATH: process.env.PYTHONPATH ? `${PI_ROOT}${path.delimiter}${process.env.PYTHONPATH}` : PI_ROOT },
-        stdio: "pipe",
+        stdio: ["pipe", "pipe", "inherit"],  // stderr inherited so CoreNLP startup progress is visible
       },
     );
   } catch { /* SBADR exits non-zero on WARN/FAIL; report still written */ }
@@ -390,6 +404,9 @@ export function runDpaaGate(workflow: WorkflowInstance, from: WorkflowPhase, to:
         return { ok: true, message: "DPAA check passed (SBADR skipped: CoreNLP install failed)" };
       }
     }
+    if (!canImportSbadr(pythonCommand)) {
+      installDpaaIntoVenv(pythonCommand);
+    }
     console.error("[harness] Running SBADR syntactic ambiguity analysis (CoreNLP startup may take ~60s)...");
     const sbadr = runSbadrAnalysis(pythonCommand, checkedPlanPath);
     if (!sbadr.report) {
@@ -431,7 +448,7 @@ export function runDpaaGate(workflow: WorkflowInstance, from: WorkflowPhase, to:
               "Or propose a concrete rewrite based on the suggestion and ask the user to confirm",
               "Update the plan and run /workflow approve again",
             ],
-            skip: "/workflow skip dpaa <reason>",
+            skip: "/workflow skip dpaa <reason>  (SBADR shares the dpaa gate skip token)",
           }),
           table([
             ["Item", "Value"],

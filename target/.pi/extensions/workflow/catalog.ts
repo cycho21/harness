@@ -35,6 +35,8 @@ export function scanWorkflowPrerequisites(root: string = HARNESS_ROOT): Workflow
     ".pi/skills",
     ".pi/workflows",
     ".pi/dpaa",
+    ".pi/sbadr",
+    ".pi/setup_corenlp.sh",
     ".pi/pyproject.toml",
     ".pi/schemas/harness-field-log-event.schema.json",
   ];
@@ -100,6 +102,12 @@ export function formatHarnessDoctor(): string {
   const python = pythonOk("python");
   const python3 = pythonOk("python3");
   const dpaaImport = fs.existsSync(venvPython) && commandOk(`"${venvPython}" -c "import dpaa.cli"`);
+  const sbadrImport = fs.existsSync(venvPython) && commandOk(`"${venvPython}" -c "import sbadr.cli"`);
+  const coreNlpDir = path.join(PI_ROOT, "corenlp");
+  const coreNlpInstalled = fs.existsSync(coreNlpDir) && fs.readdirSync(coreNlpDir).some(
+    (f) => f.startsWith("stanford-corenlp-") && f.endsWith(".jar") && !f.includes("javadoc") && !f.includes("sources") && !f.includes("models"),
+  );
+  const javaOk = commandOk("java -version");
   const checks = [
     ["runtime files", scan.ok ? "OK" : "FAIL"],
     ["git", commandOk("git --version") ? "OK" : "FAIL"],
@@ -108,6 +116,9 @@ export function formatHarnessDoctor(): string {
     ["python3 command", python3 ? "OK" : "WARN"],
     ["DPAA venv", fs.existsSync(venvPython) ? "OK" : "MISSING (auto-created on first DPAA gate)"],
     ["DPAA import", dpaaImport ? "OK" : "MISSING (auto-installed on first DPAA gate)"],
+    ["SBADR import", sbadrImport ? "OK" : "MISSING (auto-installed on first DPAA gate)"],
+    ["java >= 17", javaOk ? "OK" : "MISSING (required for SBADR/CoreNLP)"],
+    ["CoreNLP", coreNlpInstalled ? "OK" : "MISSING (auto-installed on first DPAA gate; run .pi/setup_corenlp.sh to install manually)"],
     ["project AGENTS.md", fs.existsSync(path.join(HARNESS_ROOT, "AGENTS.md")) ? "OK" : "FAIL"],
   ];
 
