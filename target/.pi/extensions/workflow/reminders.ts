@@ -40,7 +40,7 @@ function fileMentions(file: string, needle: string): boolean {
 
 function changedFiles(root: string): string[] {
   try {
-    const out = execSync(`git -C "${root}" status --porcelain=v1 --untracked-files=all`, { encoding: "utf-8", stdio: "pipe" }).trim();
+    const out = execSync(`git -C "${root}" status --porcelain=v1 --untracked-files=all`, { encoding: "utf-8", stdio: "pipe", maxBuffer: 50 * 1024 * 1024 }).trim();
     if (!out) return [];
     return out.split(/\r?\n/).map((line) => line.slice(3).trim()).filter(Boolean);
   } catch {

@@ -610,6 +610,7 @@ export function scanPushPolicy(root: string | null = getGitRoot()): PushPolicySc
     out = execSync(`git -C "${root}" status --porcelain=v1 --untracked-files=all`, {
       encoding: "utf-8",
       stdio: "pipe",
+      maxBuffer: 50 * 1024 * 1024,
     }).trim();
   } catch {
     return { ok: true, totalChanged: 0, maxChanged: limit, findings: [] };

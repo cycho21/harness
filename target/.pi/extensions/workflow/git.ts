@@ -57,7 +57,7 @@ export function getUntestedClasses(root: string): string[] {
   try {
     const out = execSync(
       `find "${root}" -path "*/src/main/java/*.java" ! -name "package-info.java" 2>/dev/null`,
-      { encoding: "utf-8", stdio: "pipe" }
+      { encoding: "utf-8", stdio: "pipe", maxBuffer: 10 * 1024 * 1024 }
     ).trim();
     if (!out) return [];
 
