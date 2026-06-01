@@ -8,6 +8,8 @@
 param()
 
 $ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 
 $CORENLP_VERSION = "4.5.7"
 $CORENLP_ZIP     = "stanford-corenlp-$CORENLP_VERSION.zip"
