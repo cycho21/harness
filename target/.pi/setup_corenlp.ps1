@@ -24,7 +24,10 @@ Write-Host "──────────────────────�
 if (-not (Get-Command java -ErrorAction SilentlyContinue)) {
     throw "java not found. Install Java 17+ and retry."
 }
-$javaVer = (java -version 2>&1 | Select-String '\"(\d+)' | ForEach-Object { $_.Matches[0].Groups[1].Value })
+# java -version outputs to stderr; run in a SilentlyContinue scope to avoid
+# NativeCommandError noise when $ErrorActionPreference = "Stop" is active.
+$javaVerRaw = & { $ErrorActionPreference = "SilentlyContinue"; java -version 2>&1 | ForEach-Object { "$_" } }
+$javaVer = ($javaVerRaw | Select-String '"(\d+)' | ForEach-Object { $_.Matches[0].Groups[1].Value })
 if ([int]$javaVer -lt 17) {
     throw "Java 17+ required (found Java $javaVer)."
 }
