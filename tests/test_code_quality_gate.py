@@ -23,5 +23,5 @@ def test_code_quality_gate_has_explicit_skip_and_phase_guidance():
     fmt = FORMAT.read_text(encoding="utf-8")
 
     assert '"code-quality"' in workflow
-    assert "/workflow skip <dpaa|code-quality|push-review|policy-scan> <reason>" in workflow
+    assert "/workflow skip <gate> <사유>" in workflow
     assert "Advancing to review_approved mechanically runs codeQualityGuard" in fmt

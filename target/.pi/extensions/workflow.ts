@@ -283,6 +283,24 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("workflow", {
     description: "Manage the advisory interview → plan → implementation → review → document → commit → push workflow state.",
     getArgumentCompletions: (prefix) => {
+      const GATE_LABELS: Record<string, string> = {
+        "dpaa": "DPAA gate (plan_review → implement)",
+        "code-quality": "Checkstyle/PMD/test gate (code_review → review_approved)",
+        "push-review": "push 전 code review token gate",
+        "policy-scan": "push 전 위험 변경 파일 scan gate",
+      };
+
+      if (prefix.startsWith("skip ")) {
+        const gatePart = prefix.slice("skip ".length);
+        return Object.keys(GATE_LABELS)
+          .filter((g) => g.startsWith(gatePart))
+          .map((g) => {
+            const failures = state.gateFailures.get(g) ?? 0;
+            const failureHint = failures > 0 ? `  [✗${failures}]` : "";
+            return { value: `skip ${g}`, label: `skip ${g}${failureHint}  —  ${GATE_LABELS[g]}` };
+          });
+      }
+
       const commands = ["start", "approve", "status", "doctor", "failures", "list", "load", "undo", "redo", "history", "abort", "state", "snapshot", "checkpoint", "checkpoints", "restore", "skip", "dpaa-audit"];
       const persisted = loadPersistedWorkflow();
       return commands
@@ -290,6 +308,10 @@ export default function (pi: ExtensionAPI) {
         .map((value) => {
           if (value === "load" && persisted) {
             return { value, label: `load  ← [${persisted.phase}] ${persisted.title}` };
+          }
+          if (value === "skip") {
+            const activeFailures = Object.keys(GATE_LABELS).filter((g) => (state.gateFailures.get(g) ?? 0) > 0);
+            return { value, label: activeFailures.length > 0 ? `skip  ← 실패 중: ${activeFailures.join(", ")}` : "skip" };
           }
           return { value, label: value };
         });
@@ -504,39 +526,64 @@ export default function (pi: ExtensionAPI) {
       }
 
       if (command === "skip") {
-        const gate = rest[0] as "dpaa" | "code-quality" | "push-review" | "policy-scan" | undefined;
+        const VALID_GATES = ["dpaa", "code-quality", "push-review", "policy-scan"] as const;
+        const GATE_DESC: Record<string, string> = {
+          "dpaa": "DPAA 앙리버시티 gate (plan_review → implement 전환 시 실행)",
+          "code-quality": "Checkstyle/PMD/테스트 gate (code_review → review_approved 전환 시 실행)",
+          "push-review": "push 전 code review token 확인 gate",
+          "policy-scan": "push 전 위험 변경 파일 scan gate",
+        };
+        const gate = rest[0] as typeof VALID_GATES[number] | undefined;
         const reason = rest.slice(1).join(" ").trim();
-        if (!gate || !["dpaa", "code-quality", "push-review", "policy-scan"].includes(gate) || !reason) {
-          ctx.ui.notify("사용법: /workflow skip <dpaa|code-quality|push-review|policy-scan> <reason>", "warning");
+        if (!gate || !VALID_GATES.includes(gate)) {
+          const failures = VALID_GATES.filter((g) => (state.gateFailures.get(g) ?? 0) > 0);
+          ctx.ui.notify([
+            "사용법: /workflow skip <gate> <사유>",
+            "",
+            "Gate 목록:",
+            ...VALID_GATES.map((g) => {
+              const f = state.gateFailures.get(g) ?? 0;
+              return `  ${g}  —  ${GATE_DESC[g]}${f > 0 ? ` [✗${f}회 실패]` : ""}`;
+            }),
+            ...(failures.length > 0 ? ["", `현재 실패 중: ${failures.join(", ")}`] : []),
+          ].join("\n"), "warning");
           return;
         }
+        if (!reason) {
+          ctx.ui.notify(`사유를 입력하세요.\n예: /workflow skip ${gate} 테스트 환경에서 checkstyle 미적용 확인`, "warning");
+          return;
+        }
+        const failures2 = state.gateFailures.get(gate) ?? 0;
         const ok = !ctx.hasUI || (await ctx.ui.confirm(
-          "Workflow gate 승인 확인",
+          "Workflow gate skip 승인 확인",
           [
-            `${gate} gate를 1회 건너뛰는 것을 승인하시겠습니까?`,
+            `[${gate}] gate를 1회 건너뛰겠습니까?`,
+            `대상: ${GATE_DESC[gate]}`,
+            ...(failures2 > 0 ? [`이번 세션 실패 횟수: ${failures2}회`] : []),
             "",
             `사유: ${reason}`,
             "",
-            "예: 이번 1회에 한해 gate를 건너뛰고 계속 진행합니다.",
-            "아니오: 진행을 중단하고 gate를 유지합니다.",
+            "예: skip token을 발급하고 다음 1회 해당 gate를 우회합니다 (TTL 10분).",
+            "아니오: gate를 유지합니다.",
           ].join("\n"),
         ));
         if (!ok) return;
         addSkipToken(gate, reason);
+        state.gateFailures.delete(gate);
         writeFieldLogEvent({
           type: "gate.skipped",
           category: gate === "policy-scan" ? "push-policy" : gate === "code-quality" ? "code-quality" : gate === "dpaa" ? "dpaa" : "workspace",
           severity: "warning",
           status: "accepted-risk",
           workflow: state.workflow,
-          summary: `${gate} gate skip token was issued by explicit user approval.`,
+          summary: `${gate} gate skip token issued by explicit user approval.`,
           expected: "Harness gates run unless the user explicitly approves a one-time exception.",
           actual: `Skip token issued: ${reason}`,
           impact: "Repeated skip tokens may indicate guard false positives or missing workflow affordances.",
           primaryMessage: reason,
           improvementKind: gate === "dpaa" ? "dpaa-rule" : "workflow-rule",
         });
-        ctx.ui.notify(`${gate} gate skip token issued (one-time, TTL 10 minutes)`, "warning");
+        ctx.ui.notify(`✅ [${gate}] skip token 발급됨 (1회, TTL 10분)\n사유: ${reason}`, "warning");
         return;
       }
 
@@ -880,8 +927,8 @@ export default function (pi: ExtensionAPI) {
       const policyAlreadyApproved = state.policyApprovals.at(-1)?.signature === policySignature;
       if (!policyScan.ok && !policyAlreadyApproved) {
         const GATE_SKIP_THRESHOLD = 3;
-        const failures = (state.gateFailures.get("push-policy") ?? 0) + 1;
-        state.gateFailures.set("push-policy", failures);
+        const failures = (state.gateFailures.get("policy-scan") ?? 0) + 1;
+        state.gateFailures.set("policy-scan", failures);
 
         writeFieldLogEvent({
           type: "policy.blocked",
@@ -911,7 +958,7 @@ export default function (pi: ExtensionAPI) {
             ].join("\n"),
           );
           if (approved) {
-            state.gateFailures.delete("push-policy");
+            state.gateFailures.delete("policy-scan");
             state.policyApprovals.push({
               timestamp: Date.now(),
               totalChanged: policyScan.totalChanged,

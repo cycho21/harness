@@ -69,7 +69,7 @@ def test_push_policy_scan_is_wired_before_push_review_gate():
     assert "아니오: git push를 차단합니다." in workflow
     assert "gateFailures" in workflow
     assert "GATE_SKIP_THRESHOLD" in workflow
-    assert "/workflow skip <dpaa|code-quality|push-review|policy-scan> <reason>" in workflow
+    assert "/workflow skip <gate> <사유>" in workflow
 
 
 def test_push_policy_scan_categories_match_requested_risky_files():
