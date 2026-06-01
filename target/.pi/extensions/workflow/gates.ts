@@ -405,6 +405,7 @@ export function runDpaaGate(workflow: WorkflowInstance, from: WorkflowPhase, to:
       }
     }
     if (!canImportSbadr(pythonCommand)) {
+      // sbadr was added to pyproject.toml after the venv was created; reinstall to pick it up
       installDpaaIntoVenv(pythonCommand);
     }
     console.error("[harness] Running SBADR syntactic ambiguity analysis (CoreNLP startup may take ~60s)...");

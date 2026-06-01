@@ -4,7 +4,7 @@ import { LEGACY_WORKFLOW_PHASE_ALIASES, WORKFLOW_PHASES } from "./types";
 import { createWorkspaceCheckpoint, restoreWorkspaceCheckpoint } from "./checkpoints";
 import { formatWorkspaceMismatch, runPreTransitionGate, validateWorkflowWorkspace } from "./gates";
 import { getBranch, getGitRoot } from "./git";
-import { getWorkflowStatePath } from "./storage";
+import { getWorkflowStatePath, getWorkflowStateDir } from "./storage";
 
 export function createWorkflow(title: string): WorkflowInstance {
   const now = Date.now();
@@ -125,7 +125,7 @@ export function normalizeWorkflowPhase(phase: string): WorkflowPhase {
 
 export function saveWorkflow(workflow: WorkflowInstance): void {
   const file = getWorkflowStatePath();
-  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.mkdirSync(getWorkflowStateDir(), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(workflow, null, 2), "utf-8");
 }
 
