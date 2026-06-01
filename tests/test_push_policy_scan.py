@@ -64,9 +64,11 @@ def test_push_policy_scan_is_wired_before_push_review_gate():
     policy_index = workflow.index('consumeSkipToken("policy-scan")')
     review_index = workflow.index('consumeSkipToken("push-review")')
     assert policy_index < review_index, "policy scan must run before consuming the push-review token"
-    assert 'ctx.ui.confirm(\n          "Push policy scan 승인 확인"' in workflow
+    assert 'ctx.ui.confirm(\n            "Push policy scan 승인 확인"' in workflow
     assert "예: 현재 git push를 계속 진행합니다." in workflow
-    assert "아니오: git push를 차단하고 변경 검토를 요구합니다." in workflow
+    assert "아니오: git push를 차단합니다." in workflow
+    assert "gateFailures" in workflow
+    assert "GATE_SKIP_THRESHOLD" in workflow
     assert "/workflow skip <dpaa|code-quality|push-review|policy-scan> <reason>" in workflow
 
 

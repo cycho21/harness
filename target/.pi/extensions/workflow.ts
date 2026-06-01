@@ -86,6 +86,7 @@ export default function (pi: ExtensionAPI) {
     codeQualityGuardSatisfiedToken: null as { workflowId: string; issuedAt: number; reason: string } | null,
     pushExecutionGuardSatisfiedToken: null as { workflowId: string; issuedAt: number; reason: string } | null,
     policyApprovals: [] as Array<{ timestamp: number; totalChanged: number; categories: string[]; signature: string }>,
+    gateFailures: new Map<string, number>(),
     lastInputCheckpointSignature: null as string | null,
     recentVerificationCommands: [] as Array<{ command: string; timestamp: number; phase?: string }>,
     reviewPackageToken: null as null | { workflowId: string; timestamp: number; critical: number; major: number; minor: number; mainSummary: string; reviewerSummary: string; qualitySummary: string },
@@ -878,72 +879,57 @@ export default function (pi: ExtensionAPI) {
       const policySignature = pushPolicySignature(policyScan);
       const policyAlreadyApproved = state.policyApprovals.at(-1)?.signature === policySignature;
       if (!policyScan.ok && !policyAlreadyApproved) {
-        if (!ctx.hasUI) {
-          writeFieldLogEvent({
-            type: "policy.blocked",
-            category: "push-policy",
-            severity: "blocker",
-            workflow: state.workflow,
-            summary: "Push policy scan blocked git push without interactive UI.",
-            expected: "Risky push requires interactive user confirmation or explicit skip token.",
-            actual: `Policy findings: ${policyScan.findings.map((finding) => finding.category).join(", ")}`,
-            impact: "Push is blocked until a user reviews risky files.",
-            primaryMessage: formatPushPolicyScanBlocked(policyScan),
-            command: cmd,
-            files: policyScan.findings.flatMap((finding) => finding.files.slice(0, 20).map((file) => ({ path: file, role: "changed" as const }))),
-            improvementKind: "workflow-rule",
-          });
-          return {
-            block: true,
-            reason: [
+        const GATE_SKIP_THRESHOLD = 3;
+        const failures = (state.gateFailures.get("push-policy") ?? 0) + 1;
+        state.gateFailures.set("push-policy", failures);
+
+        writeFieldLogEvent({
+          type: "policy.blocked",
+          category: "push-policy",
+          severity: "blocker",
+          workflow: state.workflow,
+          summary: `Push policy scan blocked git push (attempt ${failures}/${GATE_SKIP_THRESHOLD}).`,
+          expected: "Risky push requires policy review or explicit skip token.",
+          actual: `Policy findings: ${policyScan.findings.map((finding) => finding.category).join(", ")}`,
+          impact: "Push is blocked until changes are reviewed or user approves skip.",
+          primaryMessage: formatPushPolicyScanBlocked(policyScan),
+          command: cmd,
+          files: policyScan.findings.flatMap((finding) => finding.files.slice(0, 20).map((file) => ({ path: file, role: "changed" as const }))),
+          improvementKind: "workflow-rule",
+        });
+
+        if (ctx.hasUI && failures >= GATE_SKIP_THRESHOLD) {
+          const approved = await ctx.ui.confirm(
+            "Push policy scan 승인 확인",
+            [
               formatPushPolicyScanBlocked(policyScan),
               "",
-              "사용자 대화형 승인이 필요하지만 현재 UI를 사용할 수 없어 git push를 차단했습니다.",
-              "대화형 세션에서 다시 시도하거나, 사용자에게 명시 승인받은 뒤 `/workflow skip policy-scan <reason>`을 실행하세요.",
+              `Policy scan이 ${failures}회 연속 차단했습니다. 위험 변경 사항을 검토하고 계속 진행하시겠습니까?`,
+              "",
+              "예: 현재 git push를 계속 진행합니다.",
+              "아니오: git push를 차단합니다.",
             ].join("\n"),
-          };
+          );
+          if (approved) {
+            state.gateFailures.delete("push-policy");
+            state.policyApprovals.push({
+              timestamp: Date.now(),
+              totalChanged: policyScan.totalChanged,
+              categories: policyScan.findings.map((finding) => finding.category),
+              signature: policySignature,
+            });
+            if (state.policyApprovals.length > 20) state.policyApprovals.shift();
+            return; // allow push
+          }
         }
 
-        const approved = await ctx.ui.confirm(
-          "Push policy scan 승인 확인",
-          [
-            formatPushPolicyScanBlocked(policyScan),
-            "",
-            "위 위험 변경 사항이 포함된 상태로 git push를 계속 진행하시겠습니까?",
-            "",
-            "예: 현재 git push를 계속 진행합니다.",
-            "아니오: git push를 차단하고 변경 검토를 요구합니다.",
-          ].join("\n"),
-        );
-
-        if (!approved) {
-          writeFieldLogEvent({
-            type: "policy.blocked",
-            category: "push-policy",
-            severity: "major",
-            workflow: state.workflow,
-            summary: "User rejected push policy scan confirmation.",
-            expected: "User approves risky push only after reviewing flagged changes.",
-            actual: "User did not approve the push policy warning.",
-            impact: "Push is blocked and changes require review or reduction.",
-            primaryMessage: formatPushPolicyScanBlocked(policyScan),
-            command: cmd,
-            files: policyScan.findings.flatMap((finding) => finding.files.slice(0, 20).map((file) => ({ path: file, role: "changed" as const }))),
-            improvementKind: "workflow-rule",
-          });
-          return {
-            block: true,
-            reason: "git push blocked: 사용자가 Push policy scan 경고에 대해 '예'로 승인하지 않았습니다.",
-          };
-        }
-
-        state.policyApprovals.push({
-          timestamp: Date.now(),
-          totalChanged: policyScan.totalChanged,
-          categories: policyScan.findings.map((finding) => finding.category),
-          signature: policySignature,
-        });
-        if (state.policyApprovals.length > 20) state.policyApprovals.shift();
+        const retryNote = failures < GATE_SKIP_THRESHOLD
+          ? `Attempt ${failures}/${GATE_SKIP_THRESHOLD}: Review and reduce the flagged changes, then retry git push.`
+          : `Attempt ${failures}/${GATE_SKIP_THRESHOLD}: User was asked but did not approve. Resolve the flagged changes or ask the user to run \`/workflow skip policy-scan <reason>\`.`;
+        return {
+          block: true,
+          reason: [formatPushPolicyScanBlocked(policyScan), "", retryNote].join("\n"),
+        };
       }
     }
 
