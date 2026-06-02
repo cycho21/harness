@@ -7,21 +7,12 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const childProcess = require('node:child_process');
 
-const WORKFLOW_PHASES = [
-  'interview',
-  'plan',
-  'plan_review',
-  'implement',
-  'code_review',
-  'review_approved',
-  'document',
-  'commit',
-  'push',
-  'done',
-];
-
-const AUTO_ADVANCE_FROM_PHASES = new Set(['interview', 'plan', 'implement', 'review_approved', 'document']);
-const APPROVAL_BOUNDARIES = new Set(['plan_review:implement', 'commit:push']);
+const cwd = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+const POLICY_FILE = '.harness/workflow-policy.json';
+const workflowPolicy = loadWorkflowPolicy();
+const WORKFLOW_PHASES = workflowPolicy.phases;
+const AUTO_ADVANCE_FROM_PHASES = new Set(workflowPolicy.autoAdvanceFromPhases);
+const APPROVAL_BOUNDARIES = new Set(workflowPolicy.approvalBoundaries);
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 const STATE_FILE = '.harness/state.json';
 const PERSISTED_FILE = '.harness/workflow.json';
@@ -41,6 +32,7 @@ const PROTECTED_PATTERNS = [
   '.harness/authority/**',
   '.harness/.authority-runtime/**',
   '.harness/policy.yaml',
+  '.harness/workflow-policy.json',
   '.pi/extensions/**',
   'target/.pi/extensions/**',
 ];
@@ -50,7 +42,6 @@ const DOC_PATTERNS = ['**/*.md', 'docs/**', 'README.md', 'README.*.md', '.ai/int
 
 const command = process.argv[2] || 'status';
 const args = process.argv.slice(3);
-const cwd = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const input = readStdinJson();
 
 try {
@@ -94,6 +85,51 @@ function readStdinJson() {
   } catch {
     return {};
   }
+}
+
+function loadWorkflowPolicy() {
+  const fallback = {
+    phases: ['interview', 'plan', 'plan_review', 'implement', 'code_review', 'review_approved', 'document', 'commit', 'push', 'done'],
+    autoAdvanceFromPhases: ['interview', 'plan', 'implement', 'review_approved', 'document'],
+    approvalBoundaries: ['plan_review:implement', 'commit:push'],
+    phaseGuidance: {},
+    reminderPolicy: { hardRules: [] },
+    transitionPolicy: {
+      strictNextPhaseOnly: true,
+      forbidSkippedPhases: true,
+      manualStateRestoreIsRecoveryOnly: true,
+      tokenIssuanceIsNotThePolicySource: true,
+    },
+    contextStrategy: {},
+    subagentHandoffContract: [],
+  };
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(cwd, POLICY_FILE), 'utf8'));
+    return {
+      ...fallback,
+      ...parsed,
+      phases: Array.isArray(parsed.phases) && parsed.phases.length > 0 ? parsed.phases : fallback.phases,
+      autoAdvanceFromPhases: Array.isArray(parsed.autoAdvanceFromPhases) ? parsed.autoAdvanceFromPhases : fallback.autoAdvanceFromPhases,
+      approvalBoundaries: Array.isArray(parsed.approvalBoundaries) ? parsed.approvalBoundaries : fallback.approvalBoundaries,
+      transitionPolicy: normalizeTransitionPolicy(parsed.transitionPolicy, fallback.transitionPolicy),
+      phaseGuidance: parsed.phaseGuidance && typeof parsed.phaseGuidance === 'object' ? parsed.phaseGuidance : fallback.phaseGuidance,
+      reminderPolicy: parsed.reminderPolicy && typeof parsed.reminderPolicy === 'object' ? parsed.reminderPolicy : fallback.reminderPolicy,
+      contextStrategy: parsed.contextStrategy && typeof parsed.contextStrategy === 'object' ? parsed.contextStrategy : fallback.contextStrategy,
+      subagentHandoffContract: Array.isArray(parsed.subagentHandoffContract) ? parsed.subagentHandoffContract.filter((item) => typeof item === 'string' && item.trim().length > 0) : fallback.subagentHandoffContract,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeTransitionPolicy(value, fallback) {
+  const source = value && typeof value === 'object' ? value : {};
+  return {
+    strictNextPhaseOnly: typeof source.strictNextPhaseOnly === 'boolean' ? source.strictNextPhaseOnly : fallback.strictNextPhaseOnly,
+    forbidSkippedPhases: typeof source.forbidSkippedPhases === 'boolean' ? source.forbidSkippedPhases : fallback.forbidSkippedPhases,
+    manualStateRestoreIsRecoveryOnly: typeof source.manualStateRestoreIsRecoveryOnly === 'boolean' ? source.manualStateRestoreIsRecoveryOnly : fallback.manualStateRestoreIsRecoveryOnly,
+    tokenIssuanceIsNotThePolicySource: typeof source.tokenIssuanceIsNotThePolicySource === 'boolean' ? source.tokenIssuanceIsNotThePolicySource : fallback.tokenIssuanceIsNotThePolicySource,
+  };
 }
 
 function checkToolCall(event) {
@@ -153,9 +189,8 @@ function checkBash(phase, commandText) {
     const workflow = loadWorkflow();
     const workspace = validateWorkflowWorkspace(workflow);
     if (!workspace.ok) deny(formatWorkspaceMismatch(workspace));
-    const reviewSkip = consumeSkipToken('push-review', workflow.id, input);
-    if (!reviewSkip && !hasSessionToken('code_review', workflow.id, input)) deny('Blocked by workflow gate. Missing session authority token: code_review. Complete code_review → review_approved in this Claude session or issue /workflow:skip push-review <reason>.');
-    if (!hasSessionToken('push_execution', workflow.id, input)) deny('Blocked by workflow gate. Missing session authority token: push_execution. Advance commit → push through /workflow:approve in this Claude session.');
+    if (!hasWorkflowTransition(workflow, 'commit', 'push')) deny('Blocked by workflow gate. Missing workflow transition history: commit → push. Advance through /workflow:approve instead of setting push directly.');
+    // Push authority is derived from strict workflow phase/history validation, not from session tokens.
   }
   if (/\bgit\s+commit\b/i.test(commandText) && phase !== 'commit') deny(`Blocked by workflow gate. git commit is allowed only in commit phase. Current phase: ${phase}.`);
 
@@ -177,8 +212,9 @@ function handleUserPrompt(event) {
   const text = String(event.prompt || event.message || event.text || '').trim();
   if (isApprovalText(text) && isApprovalBoundary(workflow.phase)) {
     const result = advanceWorkflow(workflow, 'natural_language_approval', { approval: true, event });
+    const updated = loadWorkflowOrNull() || workflow;
     const message = result.ok ? result.message : `Workflow approval blocked: ${result.message}`;
-    console.log(JSON.stringify(contextMessage(`${message}\n\n${phaseGuidance(loadWorkflowOrNull()?.phase || workflow.phase)}`, 'UserPromptSubmit')));
+    console.log(JSON.stringify(contextMessage(`${message}\n\n${formatWorkflowPrompt(updated)}`, 'UserPromptSubmit')));
     return allow();
   }
   console.log(JSON.stringify(contextMessage(formatWorkflowPrompt(workflow), 'UserPromptSubmit')));
@@ -218,6 +254,7 @@ function advanceWorkflow(workflow, reason, options) {
     if (!to) return transitions.length ? ok(transitions) : { ok: false, message: `Already at final phase: ${from}`, transitions };
 
     if (APPROVAL_BOUNDARIES.has(`${from}:${to}`) && !options.approval) break;
+    if (!isTransitionAllowedByPolicy(from, to)) return transitions.length ? ok(transitions) : { ok: false, message: `Workflow transition blocked by policy: ${from} → ${to}`, transitions };
     const gate = runPreTransitionGate(workflow, from, to, options);
     if (!gate.ok) return transitions.length ? ok(transitions) : { ok: false, message: gate.message, transitions };
 
@@ -226,8 +263,6 @@ function advanceWorkflow(workflow, reason, options) {
     workflow.phase = to;
     workflow.updatedAt = Date.now();
     transitions.push({ from, to });
-    issueTransitionTokens(workflow, from, to, reason, options.event || {});
-
     if (!AUTO_ADVANCE_FROM_PHASES.has(to)) break;
   }
   return ok(transitions);
@@ -253,7 +288,7 @@ function runPreTransitionGate(workflow, from, to, options) {
     return skipped ? pass(`DPAA skipped: ${skipped.reason}`) : runDpaaGate(workflow, from, to);
   }
   if (from === 'implement' && to === 'code_review') {
-    return fileExists('.harness/proposal/implementation-summary.md') || hasChangedFiles() ? pass() : block('Implementation evidence required: changed files or .harness/proposal/implementation-summary.md.');
+    return fileExists('.harness/proposal/implementation-summary.md') || hasImplementationChangedFiles() ? pass() : block('Implementation evidence required: implementation changed files or .harness/proposal/implementation-summary.md.');
   }
   if (from === 'code_review' && to === 'review_approved') {
     if (!isReviewPackageApproved()) return block(`Review package required in ${REVIEW_PACKAGE_FILE}.`);
@@ -346,12 +381,12 @@ function skipGateCommand(raw) {
 }
 function skipGate(gate, reason) {
   const workflow = loadWorkflow();
-  const valid = ['dpaa', 'code-quality', 'push-review', 'policy-scan'];
+  const valid = ['dpaa', 'code-quality', 'policy-scan'];
   if (!valid.includes(gate)) return deny(`Usage: skip <${valid.join('|')}> <reason>`);
   if (!String(reason || '').trim()) return deny(`Reason required. Usage: skip ${gate} <reason>`);
   issueSkipToken(gate, workflow.id, reason, input);
-  writeFieldLogEvent(workflow, 'gate.skipped', gate, `${gate} skip token issued.`, reason);
-  console.log(`✅ [${gate}] skip token issued for this session (1 use, 10 minutes). Reason: ${reason}`);
+  writeFieldLogEvent(workflow, 'gate.skipped', gate, `${gate} one-use exception issued.`, reason);
+  console.log(`✅ [${gate}] one-use exception issued for this session (1 use, 10 minutes). Reason: ${reason}`);
 }
 function listWorkflowCatalog() {
   const dir = abs('.pi/workflows');
@@ -404,9 +439,8 @@ function doctor() {
     ['UserPromptSubmit hook', !!hooks.UserPromptSubmit],
     ['PreToolUse hook', !!hooks.PreToolUse],
     ['PostToolUse hook', !!hooks.PostToolUse],
-    ['sandbox enabled', settings.sandbox?.enabled === true],
-    ['unsandboxed disabled', settings.sandbox?.allowUnsandboxedCommands === false],
-    ['authority runtime denyRead', (settings.sandbox?.filesystem?.denyRead || []).includes('.harness/.authority-runtime')],
+    ['shared workflow policy', fileExists(POLICY_FILE)],
+    ['sandbox disabled by default', !settings.sandbox],
     ['authority runtime permission deny', deny.includes('Read(.harness/.authority-runtime/**)')],
     ['state', !!loadWorkflowOrNull()],
     ['authority dir', fs.existsSync(abs('.harness/authority'))],
@@ -465,24 +499,49 @@ function formatWorkflowStatus(workflow) {
   ].join('\n');
 }
 function formatWorkflowPrompt(workflow) {
-  return [formatWorkflowStatus(workflow), '', phaseGuidance(workflow.phase), 'Approval boundaries: plan_review → implement, commit → push. Use /workflow:approve or explicit natural language approval.'].join('\n');
+  return [formatWorkflowStatus(workflow), '', formatHardRules(), formatContextStrategy(workflow.phase), phaseGuidance(workflow.phase), formatApprovalBoundaries()].filter(Boolean).join('\n');
+}
+function formatApprovalBoundaries() {
+  const boundaries = Array.isArray(workflowPolicy.approvalBoundaries) ? workflowPolicy.approvalBoundaries : [];
+  const rendered = boundaries.map((item) => item.replace(':', ' → ')).join(', ');
+  return rendered ? `Approval boundaries: ${rendered}. Use /workflow:approve or explicit natural language approval.` : 'Approval boundaries: none.';
+}
+function formatHardRules() {
+  const rules = workflowPolicy.reminderPolicy?.hardRules;
+  return Array.isArray(rules) && rules.length > 0
+    ? ['[WORKFLOW HARD RULES]', ...rules.filter(Boolean).map((rule) => `- ${rule}`), '[/WORKFLOW HARD RULES]'].join('\n')
+    : '';
+}
+function formatContextStrategy(phase) {
+  const strategy = workflowPolicy.contextStrategy?.[phase];
+  if (!strategy || typeof strategy !== 'object') return '';
+  const keeps = Array.isArray(strategy.mainKeeps) ? strategy.mainKeeps.filter(Boolean) : [];
+  const avoids = Array.isArray(strategy.mainAvoids) ? strategy.mainAvoids.filter(Boolean) : [];
+  const contract = Array.isArray(workflowPolicy.subagentHandoffContract) ? workflowPolicy.subagentHandoffContract.filter(Boolean) : [];
+  return [
+    `[CONTEXT STRATEGY: ${phase}]`,
+    strategy.delegateTo ? `- Delegate: ${strategy.delegateTo}` : '',
+    keeps.length > 0 ? `- Main keeps: ${keeps.join(', ')}` : '',
+    avoids.length > 0 ? `- Main avoids: ${avoids.join(', ')}` : '',
+    contract.length > 0 ? `- Subagent returns: ${contract.join(', ')}` : '',
+    '[/CONTEXT STRATEGY]',
+  ].filter(Boolean).join('\n');
 }
 function phaseGuidance(phase) {
-  const map = {
-    interview: 'Deliverable: clarify requirements in .ai/interview/spec.md or spec.ko.md. Do not edit source.',
-    plan: 'Deliverable: write implementation plan in .ai/interview/plan.md. Do not edit source.',
-    plan_review: 'Deliverable: present plan for approval. Implementation requires plan-review.json and DPAA/SBADR pass.',
-    implement: 'Deliverable: implement only approved allowed_files, then provide implementation evidence.',
-    code_review: 'Deliverable: review package + codeQualityGuard before review_approved.',
-    review_approved: 'Deliverable: ensure findings are handled, then document.',
-    document: 'Deliverable: update docs or docs-summary before commit.',
-    commit: 'Deliverable: present commit summary. Approval advances to push after policy scan.',
-    push: 'Deliverable: git push only with session push_execution token.',
-    done: 'Workflow complete.'
-  };
-  return map[phase] || `Current phase: ${phase}`;
+  const shared = workflowPolicy.phaseGuidance?.[phase];
+  if (shared) return `Deliverable: ${shared}`;
+  return `Current phase: ${phase}`;
 }
-function isApprovalBoundary(phase) { return phase === 'plan_review' || phase === 'commit'; }
+function isTransitionAllowedByPolicy(from, to) {
+  const policy = workflowPolicy.transitionPolicy || {};
+  if (policy.strictNextPhaseOnly || policy.forbidSkippedPhases) return getNextPhase(from) === to;
+  return WORKFLOW_PHASES.includes(from) && WORKFLOW_PHASES.includes(to);
+}
+function isApprovalBoundary(phase) {
+  const next = getNextPhase(phase);
+  return Boolean(next && APPROVAL_BOUNDARIES.has(`${phase}:${next}`));
+}
+function hasWorkflowTransition(workflow, from, to) { return Array.isArray(workflow?.history) && workflow.history.some((item) => item.from === from && item.to === to); }
 function isApprovalText(text) { return /^(응|네|예|ㅇㅇ|승인|진행|계속|좋아|go|yes|approved|approve|proceed)([\s.!。~]|$)/i.test(String(text || '').trim()); }
 
 function approvedAllowedFiles() {
@@ -496,6 +555,13 @@ function hasInterviewArtifact() { return fileExists('.ai/interview/spec.md') || 
 function hasPlanArtifact() { return fileExists('.ai/interview/plan.md') || fileExists('.ai/interview/plan.ko.md') || latestPlanInDocs() || fileExists('.harness/proposal/plan.yaml'); }
 function hasDocsEvidence() { return fileExists('.harness/proposal/docs-summary.md') || gitChangedFiles().some((f) => matchesAny(f, DOC_PATTERNS)); }
 function hasChangedFiles() { return gitChangedFiles().length > 0; }
+function hasImplementationChangedFiles() {
+  const allowed = approvedAllowedFiles();
+  return gitChangedFiles().some((file) => {
+    if (matchesAny(file, [...PLAN_PATTERNS, ...INTERVIEW_PATTERNS, '.harness/proposal/**', '.harness/authority/**'])) return false;
+    return allowed.length === 0 || matchesAny(file, allowed);
+  });
+}
 function latestPlanInDocs() { const dir = abs('docs/superpowers/plans'); return fs.existsSync(dir) && fs.readdirSync(dir).some((n) => n.endsWith('.md')); }
 function rawGitChangedFiles() {
   try {

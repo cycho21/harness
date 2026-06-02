@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "description": "Shared workflow policy for Pi and Claude adapters. Runtime adapters may keep their own storage, UI, and tool-gate implementations, but phase order, transition policy, reminder intent, and context-management rules should stay aligned with this file.",
+  "phases": [
+    "interview",
+    "plan",
+    "plan_review",
+    "implement",
+    "code_review",
+    "review_approved",
+    "document",
+    "commit",
+    "push",
+    "done"
+  ],
+  "autoAdvanceFromPhases": [
+    "interview",
+    "plan",
+    "implement",
+    "review_approved",
+    "document"
+  ],
+  "approvalBoundaries": [
+    "plan_review:implement",
+    "commit:push"
+  ],
+  "gates": [
+    "dpaa",
+    "code-quality",
+    "policy-scan"
+  ],
+  "transitionPolicy": {
+    "strictNextPhaseOnly": true,
+    "forbidSkippedPhases": true,
+    "manualStateRestoreIsRecoveryOnly": true,
+    "tokenIssuanceIsNotThePolicySource": true
+  },
+  "contextManagement": {
+    "mainAgentRole": "workflow-controller",
+    "subagentPreferredPhases": [
+      "implement",
+      "code_review"
+    ],
+    "subagentPreferredWork": [
+      "implementation",
+      "independent-review",
+      "large-diff-analysis",
+      "test-log-analysis",
+      "build-log-analysis"
+    ],
+    "mainContextShouldKeepOnly": [
+      "decisions",
+      "changed-files",
+      "verification-summary",
+      "blockers",
+      "next-phase"
+    ]
+  },
+  "reminderPolicy": {
+    "injectOnUserPrompt": true,
+    "injectBeforeAgentStart": true,
+    "includeCurrentPhase": true,
+    "includeNextPhase": true,
+    "includeNoSkipRule": true,
+    "includeSubagentGuidance": true,
+    "hardRules": [
+      "Follow the current workflow phase.",
+      "Never skip phases; only advance to the next phase.",
+      "User approval is required only before implement and before push.",
+      "In code_review, fix/review/quality loop stays in code_review.",
+      "Use subagents for implementation, review, large diffs, and logs.",
+      "Keep main context to decisions, changed files, verification, blockers, next phase."
+    ]
+  },
+  "contextStrategy": {
+    "implement": {
+      "delegateTo": "worker",
+      "mainKeeps": ["changed files", "summary", "verification", "risks"],
+      "mainAvoids": ["raw logs", "large diffs", "file dumps"]
+    },
+    "code_review": {
+      "delegateTo": "reviewer",
+      "mainKeeps": ["finding counts", "fix summary", "quality result", "blockers"],
+      "mainAvoids": ["full review transcript", "full logs"]
+    },
+    "document": {
+      "delegateTo": "worker when documentation is large",
+      "mainKeeps": ["docs changed", "rationale", "verification"],
+      "mainAvoids": ["large copied docs", "unrelated documentation"]
+    },
+    "commit": {
+      "delegateTo": "main",
+      "mainKeeps": ["diff summary", "verification summary", "risk summary", "commit message"],
+      "mainAvoids": ["raw diff", "full logs"]
+    }
+  },
+  "subagentHandoffContract": [
+    "Summary",
+    "Changed files",
+    "Verification",
+    "Risks",
+    "Blockers",
+    "Recommended next step"
+  ],
+  "phaseGuidance": {
+    "interview": "Clarify requirements only; write interview artifacts before planning.",
+    "plan": "Write the implementation plan; do not modify production code yet.",
+    "plan_review": "Wait for explicit approval before implementation.",
+    "implement": "Implement only the approved plan; prefer subagents for context-heavy implementation work.",
+    "code_review": "Run self-review, independent/subagent review, and quality gates before review approval.",
+    "review_approved": "Prepare documentation after review approval.",
+    "document": "Update required documentation before commit.",
+    "commit": "Present verification, risk, diff summary, and proposed commit message before push approval.",
+    "push": "Push only after policy checks and explicit push-phase approval.",
+    "done": "Workflow is complete; start a new workflow for new changes."
+  }
+}

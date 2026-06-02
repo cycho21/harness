@@ -1,10 +1,11 @@
 import * as fs from "node:fs";
 import type { WorkflowInstance, WorkflowPhase } from "./types";
-import { LEGACY_WORKFLOW_PHASE_ALIASES, WORKFLOW_PHASES } from "./types";
+import { LEGACY_WORKFLOW_PHASE_ALIASES } from "./types";
 import { createWorkspaceCheckpoint, restoreWorkspaceCheckpoint } from "./checkpoints";
 import { formatWorkspaceMismatch, runPreTransitionGate, validateWorkflowWorkspace } from "./gates";
 import { getBranch, getGitRoot } from "./git";
 import { getWorkflowStatePath, getWorkflowStateDir } from "./storage";
+import { isSharedAutoAdvancePhase, isSharedTransitionAllowed, isSharedWorkflowPhase, sharedNextPhase } from "./policy-core";
 
 export function createWorkflow(title: string): WorkflowInstance {
   const now = Date.now();
@@ -23,19 +24,10 @@ export function createWorkflow(title: string): WorkflowInstance {
   };
 }
 
-export const AUTO_ADVANCE_FROM_PHASES = new Set<WorkflowPhase>([
-  "interview",
-  "plan",
-  "implement",
-  "review_approved",
-  "document",
-]);
-
 export type WorkflowAdvanceTransition = { from: WorkflowPhase; to: WorkflowPhase; message: string };
 
 export function getNextPhase(phase: WorkflowPhase): WorkflowPhase | null {
-  const index = WORKFLOW_PHASES.indexOf(phase);
-  return index >= 0 ? WORKFLOW_PHASES[index + 1] ?? null : null;
+  return sharedNextPhase(phase);
 }
 
 export function transitionWorkflow(workflow: WorkflowInstance, to: WorkflowPhase, reason: string): void {
@@ -69,6 +61,10 @@ export async function advanceWorkflow(workflow: WorkflowInstance | null, reason:
       break;
     }
 
+    if (!isSharedTransitionAllowed(from, next)) {
+      return { ok: false, message: `Workflow transition blocked by policy: ${from} → ${next}` };
+    }
+
     const gate = await runPreTransitionGate(workflow, from, next);
     if (!gate.ok) {
       if (transitions.length === 0) return { ok: false, message: gate.message, gate: gate.gate };
@@ -82,7 +78,7 @@ export async function advanceWorkflow(workflow: WorkflowInstance | null, reason:
     // Risky boundaries (plan_review→implement, commit→push) still require a user
     // approval that starts from that phase. implement→code_review is automated;
     // code_review→review_approved is triggered after a submitted review package passes gates.
-    if (!AUTO_ADVANCE_FROM_PHASES.has(next)) break;
+    if (!isSharedAutoAdvancePhase(next)) break;
   }
 
   saveWorkflow(workflow);
@@ -110,7 +106,7 @@ export function loadPersistedWorkflow(): WorkflowInstance | null {
       from: normalizeWorkflowPhase(item.from),
       to: normalizeWorkflowPhase(item.to),
     }));
-    if (!WORKFLOW_PHASES.includes(workflow.phase)) return null;
+    if (!isSharedWorkflowPhase(workflow.phase)) return null;
     return workflow;
   } catch {
     return null;
@@ -118,7 +114,7 @@ export function loadPersistedWorkflow(): WorkflowInstance | null {
 }
 
 export function normalizeWorkflowPhase(phase: string): WorkflowPhase {
-  return (WORKFLOW_PHASES.includes(phase as WorkflowPhase)
+  return (isSharedWorkflowPhase(phase)
     ? phase
     : LEGACY_WORKFLOW_PHASE_ALIASES[phase] ?? phase) as WorkflowPhase;
 }

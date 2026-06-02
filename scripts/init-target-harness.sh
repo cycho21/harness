@@ -97,7 +97,7 @@ component_selected_with() {
   case "$component" in
     workflow)
       case "$rel" in
-        AGENTS.md|.pi/.gitignore|.pi/LOCAL.md|.pi/WORKFLOW.md|.pi/GOVERNANCE.md|.pi/extensions/workflow.ts|.pi/extensions/workflow/*|.pi/dpaa/*|.pi/workflows/*|.pi/skills/*|.pi/personas/*|.pi/pyproject.toml|.pi/schemas/harness-field-log-event.schema.json|.pi/sbadr/*|.pi/setup_corenlp.sh|.pi/setup_corenlp.ps1) return 0 ;;
+        AGENTS.md|.pi/.gitignore|.pi/LOCAL.md|.pi/WORKFLOW.md|.pi/GOVERNANCE.md|.pi/extensions/workflow.ts|.pi/extensions/workflow/*|.harness/workflow-policy.json|.pi/dpaa/*|.pi/workflows/*|.pi/skills/*|.pi/personas/*|.pi/pyproject.toml|.pi/schemas/harness-field-log-event.schema.json|.pi/sbadr/*|.pi/setup_corenlp.sh|.pi/setup_corenlp.ps1) return 0 ;;
       esac ;;
     memory)
       case "$rel" in
@@ -105,7 +105,7 @@ component_selected_with() {
       esac ;;
     claude-workflow)
       case "$rel" in
-        .claude/settings.json|.claude/hooks/workflow-gate.cjs|.claude/commands/workflow/*|.harness/.gitignore|.harness/README.md|.harness/state.json|.harness/workflow.json|.harness/proposal/*|.harness/authority/*|.ai/interview/*|.pi/dpaa/*|.pi/sbadr/*|.pi/pyproject.toml|.pi/setup_corenlp.sh|.pi/setup_corenlp.ps1) return 0 ;;
+        .claude/settings.json|.claude/hooks/workflow-gate.cjs|.claude/commands/workflow/*|.harness/.gitignore|.harness/README.md|.harness/workflow-policy.json|.harness/state.json|.harness/workflow.json|.harness/proposal/*|.harness/authority/*|.ai/interview/*|.pi/dpaa/*|.pi/sbadr/*|.pi/pyproject.toml|.pi/setup_corenlp.sh|.pi/setup_corenlp.ps1) return 0 ;;
       esac ;;
     *) echo "Unknown component: $component" >&2; exit 2 ;;
   esac

@@ -124,7 +124,7 @@ Implement the following task in the DevCenter project.
 
 3. Run review before reporting done.
    - Execute `/code-review-gate` or `/code-review` on your scoped changes.
-   - Do not create guard tokens or claim user approval.
+   - Do not create guard/authority artifacts or claim user approval.
 
 4. Respect scope.
    - Modify only the specified files.
@@ -154,7 +154,7 @@ Task context:
 - Acceptance criteria: <acceptance_criteria>
 
 Run the `/code-review-gate` skill.
-Report the result in Korean. Do not create guard tokens; user confirmation happens through `/workflow approve`.
+Report the result in Korean. Do not create guard/authority artifacts; user confirmation happens through `/workflow approve`.
 ```
 
 ### Fix Agent

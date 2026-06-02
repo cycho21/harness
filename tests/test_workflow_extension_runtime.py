@@ -65,8 +65,8 @@ def test_workflow_extension_runtime_registers_and_allows_restored_push(tmp_path)
     assert "submit_review_result" not in data["toolNames"]
     assert data["pushAllowed"] is True
     assert "Workflow state 수동 변경 승인 확인" in data["confirmTitles"]
-    assert "[Workflow Authority Memory]" in data["prompt"]
-    assert "Push execution guard satisfied token: present" in data["prompt"]
+    assert "[Workflow Guard Evidence]" in data["prompt"]
+    assert "Push transition evidence: present" in data["prompt"]
 
 
 def test_workflow_extension_runtime_auto_advances_low_risk_phase_boundaries(tmp_path):

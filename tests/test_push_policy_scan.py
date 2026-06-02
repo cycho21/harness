@@ -44,7 +44,7 @@ def _mirror_policy_scan(lines: list[str], max_changed: int = 30) -> dict[str, li
     return findings
 
 
-def test_push_policy_scan_is_wired_before_push_review_gate():
+def test_push_policy_scan_is_wired_for_git_push_gate():
     gates = GATES.read_text(encoding="utf-8")
     workflow = WORKFLOW_EXTENSION.read_text(encoding="utf-8")
 
@@ -61,9 +61,9 @@ def test_push_policy_scan_is_wired_before_push_review_gate():
     ]:
         assert needle in gates
 
-    policy_index = workflow.index('consumeSkipToken("policy-scan")')
-    review_index = workflow.index('consumeSkipToken("push-review")')
-    assert policy_index < review_index, "policy scan must run before consuming the push-review token"
+    assert 'consumeSkipToken("policy-scan")' in workflow
+    assert 'consumeSkipToken("push-review")' not in workflow
+    assert 'Workflow Transition History' in workflow
     assert 'ctx.ui.confirm(\n            "Push policy scan 승인 확인"' in workflow
     assert "예: 현재 git push를 계속 진행합니다." in workflow
     assert "아니오: git push를 차단합니다." in workflow

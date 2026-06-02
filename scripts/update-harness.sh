@@ -78,6 +78,7 @@ managed_paths_for() {
         .pi/GOVERNANCE.md \
         .pi/extensions/workflow.ts \
         .pi/extensions/workflow \
+        .harness/workflow-policy.json \
         .pi/dpaa \
         .pi/sbadr \
         .pi/setup_corenlp.sh \
@@ -99,6 +100,7 @@ managed_paths_for() {
         .claude/commands/workflow \
         .harness/.gitignore \
         .harness/README.md \
+        .harness/workflow-policy.json \
         .pi/dpaa \
         .pi/sbadr \
         .pi/pyproject.toml \

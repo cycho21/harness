@@ -3,6 +3,7 @@ import { listArtifactSnapshots } from "./artifacts";
 import { validateWorkflowWorkspace, formatWorkspaceMismatch } from "./gates";
 import { getNextPhase } from "./state";
 import { banner, table } from "./ui";
+import { sharedContextStrategy, sharedHardRules, sharedPhaseGuidance, sharedSubagentHandoffContract } from "./policy-core";
 
 export function formatWorkflowStatus(workflow: WorkflowInstance | null): string {
   if (!workflow) {
@@ -78,13 +79,37 @@ export function formatWorkflowPrompt(workflow: WorkflowInstance | null): string 
     "• Approval can be /workflow approve or natural language such as '응, 진행해'.",
     "• Phase changes always create workspace checkpoints; during implement/code_review/review_approved/document/commit/push, dirty workspace user requests may prompt for an extra checkpoint.",
     "• /workflow undo, redo, and restore recover tracked/staged/untracked git workspace changes from checkpoints.",
+    formatHardRules(),
+    formatContextStrategy(workflow.phase),
     phaseGuidance(workflow.phase),
   ];
   if (!workspace.ok) lines.push(formatWorkspaceMismatch(workspace));
   return lines.join("\n");
 }
 
+function formatHardRules(): string {
+  const rules = sharedHardRules();
+  return rules.length > 0 ? ["[WORKFLOW HARD RULES]", ...rules.map((rule) => `- ${rule}`), "[/WORKFLOW HARD RULES]"].join("\n") : "";
+}
+
+function formatContextStrategy(phase: WorkflowPhase): string {
+  const strategy = sharedContextStrategy(phase);
+  if (!strategy) return "";
+  const contract = sharedSubagentHandoffContract();
+  return [
+    `[CONTEXT STRATEGY: ${phase}]`,
+    strategy.delegateTo ? `- Delegate: ${strategy.delegateTo}` : "",
+    strategy.mainKeeps.length > 0 ? `- Main keeps: ${strategy.mainKeeps.join(", ")}` : "",
+    strategy.mainAvoids.length > 0 ? `- Main avoids: ${strategy.mainAvoids.join(", ")}` : "",
+    contract.length > 0 ? `- Subagent returns: ${contract.join(", ")}` : "",
+    "[/CONTEXT STRATEGY]",
+  ].filter(Boolean).join("\n");
+}
+
 export function phaseGuidance(phase: WorkflowPhase): string {
+  const shared = sharedPhaseGuidance(phase);
+  if (shared) return `• Deliverable: ${shared}`;
+
   switch (phase) {
     case "interview":
       return "• Deliverable: clarify requirements and keep Korean source artifacts in .ai/interview/*.ko.md.";
@@ -103,7 +128,7 @@ export function phaseGuidance(phase: WorkflowPhase): string {
     case "commit":
       return "• Deliverable: present commit summary and commit only after approval. Ask for approval before push.";
     case "push":
-      return "• Deliverable: push only after policy scan approval and valid review token/authority.";
+      return "• Deliverable: push only after policy scan approval and commit → push transition history.";
     case "done":
       return "• Workflow is complete. Start a new workflow for additional procedural work.";
   }

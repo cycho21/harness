@@ -5,7 +5,7 @@ description: Legacy convenience skill for the post-implementation path. Prefer t
 
 # Push / Review Checklist Helper
 
-The workflow extension owns phase transitions and push enforcement. This skill must not bypass `/workflow` or create guard tokens.
+The workflow extension owns phase transitions and push enforcement. This skill must not bypass `/workflow` or create guard/authority artifacts.
 
 ## Output Language
 

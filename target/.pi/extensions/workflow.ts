@@ -63,7 +63,8 @@ import {
   writeFieldLogEvent,
   validateWorkflowWorkspace,
   transitionWorkflow,
-  WORKFLOW_PHASES,
+  isSharedWorkflowPhase,
+  sharedWorkflowPhases,
   type WorkflowInstance,
   type WorkflowPhase,
 } from "./workflow/core";
@@ -73,7 +74,7 @@ const HARNESS_ROOT = path.resolve(__dirname, "../..");
 
 export default function (pi: ExtensionAPI) {
   // ── In-memory state ────────────────────────────────────────────────────────
-  // Process memory only: the LLM cannot forge this token through shell/file writes.
+  // Process memory only: the LLM cannot forge this guard evidence through shell/file writes.
   const state = {
     codeReviewGuardSatisfiedToken: null as {
       critical: number;
@@ -291,7 +292,6 @@ export default function (pi: ExtensionAPI) {
       const GATE_LABELS: Record<string, string> = {
         "dpaa": "DPAA gate (plan_review → implement)",
         "code-quality": "Checkstyle/PMD/test gate (code_review → review_approved)",
-        "push-review": "push 전 code review token gate",
         "policy-scan": "push 전 위험 변경 파일 scan gate",
       };
 
@@ -431,24 +431,23 @@ export default function (pi: ExtensionAPI) {
         transitions.forEach((t) => {
           if (t.from === "plan_review" && t.to === "implement") state.gateFailures.delete("dpaa");
           if (t.from === "code_review" && t.to === "review_approved") state.gateFailures.delete("code-quality");
-          if (t.from === "commit" && t.to === "push") state.gateFailures.delete("push-review");
         });
         const notices: string[] = [result.message];
         if (workflowId && transitions.some((item) => item.from === "plan_review" && item.to === "implement")) {
           state.dpaaGuardSatisfiedToken = { workflowId, issuedAt: Date.now(), reason: "user_approved" };
-          notices.push("DPAA guard satisfied: DPAA guard satisfied token recorded in current-session memory.");
+          notices.push("DPAA guard satisfied: transition evidence recorded in current-session memory.");
         }
         if (workflowId && transitions.some((item) => item.from === "code_review" && item.to === "review_approved")) {
           state.codeQualityGuardSatisfiedToken = { workflowId, issuedAt: Date.now(), reason: "automated_review_passed" };
           state.codeReviewGuardSatisfiedToken = { critical: 0, major: 0, minor: 0, timestamp: Date.now() };
           state.recentVerificationCommands.push({ command: "codeQualityGuard", timestamp: Date.now(), phase: "code_review" });
           if (state.recentVerificationCommands.length > 20) state.recentVerificationCommands.shift();
-          notices.push("Automated review approved: code review token recorded after review/quality gates passed.");
-          notices.push("Code quality guard satisfied: code quality guard satisfied token recorded in current-session memory.");
+          notices.push("Automated review approved: review/quality evidence recorded in current-session memory.");
+          notices.push("Code quality guard satisfied: quality evidence recorded in current-session memory.");
         }
         if (workflowId && transitions.some((item) => item.from === "commit" && item.to === "push")) {
           state.pushExecutionGuardSatisfiedToken = { workflowId, issuedAt: Date.now(), reason: "user_approved" };
-          notices.push("Push execution guard satisfied: push execution guard satisfied token recorded in current-session memory.");
+          notices.push("Push phase approved: commit → push transition evidence recorded in workflow history.");
         }
         ctx.ui.notify(notices.join("\n"), "info");
         return;
@@ -541,11 +540,10 @@ export default function (pi: ExtensionAPI) {
       }
 
       if (command === "skip") {
-        const VALID_GATES = ["dpaa", "code-quality", "push-review", "policy-scan"] as const;
+        const VALID_GATES = ["dpaa", "code-quality", "policy-scan"] as const;
         const GATE_DESC: Record<string, string> = {
           "dpaa": "DPAA 모호성 분석 gate (plan_review → implement 전환 시 실행)",
           "code-quality": "Checkstyle/PMD/테스트 gate (code_review → review_approved 전환 시 실행)",
-          "push-review": "push 전 code review token 확인 gate",
           "policy-scan": "push 전 위험 변경 파일 scan gate",
         };
         const gate = rest[0] as typeof VALID_GATES[number] | undefined;
@@ -578,7 +576,7 @@ export default function (pi: ExtensionAPI) {
             "",
             `사유: ${reason}`,
             "",
-            "예: skip token을 발급하고 다음 1회 해당 gate를 우회합니다 (TTL 10분).",
+            "예: 다음 1회에 한해 해당 gate 예외를 허용합니다 (TTL 10분).",
             "아니오: gate를 유지합니다.",
           ].join("\n"),
         ));
@@ -591,14 +589,14 @@ export default function (pi: ExtensionAPI) {
           severity: "warning",
           status: "accepted-risk",
           workflow: state.workflow,
-          summary: `${gate} gate skip token issued by explicit user approval.`,
+          summary: `${gate} gate one-use exception issued by explicit user approval.`,
           expected: "Harness gates run unless the user explicitly approves a one-time exception.",
-          actual: `Skip token issued: ${reason}`,
-          impact: "Repeated skip tokens may indicate guard false positives or missing workflow affordances.",
+          actual: `One-use exception issued: ${reason}`,
+          impact: "Repeated exceptions may indicate guard false positives or missing workflow affordances.",
           primaryMessage: reason,
           improvementKind: gate === "dpaa" ? "dpaa-rule" : "workflow-rule",
         });
-        ctx.ui.notify(`✅ [${gate}] skip token 발급됨 (1회, TTL 10분)\n사유: ${reason}`, "warning");
+        ctx.ui.notify(`✅ [${gate}] 1회 예외 허용됨 (TTL 10분)\n사유: ${reason}`, "warning");
         return;
       }
 
@@ -658,22 +656,23 @@ export default function (pi: ExtensionAPI) {
       }
 
       if (command === "state") {
+        const phases = sharedWorkflowPhases();
         const next = rest[0] as WorkflowPhase | undefined;
-        if (!next || !WORKFLOW_PHASES.includes(next)) {
-          ctx.ui.notify(`사용법: /workflow state <${WORKFLOW_PHASES.join("|")}>`, "warning");
+        if (!next || !isSharedWorkflowPhase(next)) {
+          ctx.ui.notify(`사용법: /workflow state <${phases.join("|")}>`, "warning");
           return;
         }
         const recoveryClaims: Record<WorkflowPhase, string> = {
-          interview: "초기 interview 단계로 복구합니다. guard token은 발급하지 않습니다.",
-          plan: "요구사항 확인 후 plan 단계까지 진행했다고 확인합니다. guard token은 발급하지 않습니다.",
+          interview: "초기 interview 단계로 복구합니다. guard evidence는 복구하지 않습니다.",
+          plan: "요구사항 확인 후 plan 단계까지 진행했다고 확인합니다. guard evidence는 복구하지 않습니다.",
           plan_review: "plan 작성 후 review 단계까지 진행했다고 확인합니다. DPAA는 아직 통과한 것으로 간주하지 않습니다.",
-          implement: "DPAA guard가 만족되어 implement 단계에 진입했다고 확인하고 DPAA token을 발급합니다.",
+          implement: "DPAA guard가 만족되어 implement 단계에 진입했다고 확인하고 transition evidence를 복구합니다.",
           code_review: "DPAA guard가 만족되고 구현이 완료되어 code_review 단계에 진입했다고 확인합니다.",
-          review_approved: "DPAA, code quality, code review guard가 모두 만족되었다고 확인하고 관련 token을 발급합니다.",
-          document: "review_approved 이후 문서화 단계까지 진행했다고 확인하고 관련 token을 발급합니다.",
-          commit: "문서화까지 완료되어 commit 단계까지 진행했다고 확인하고 관련 token을 발급합니다.",
-          push: "DPAA, code quality, code review, commit approval이 완료되어 push 단계라고 확인하고 모든 push 전 guard token을 발급합니다.",
-          done: "workflow가 완료되었다고 표시합니다. 실행 권한 token은 발급하지 않습니다.",
+          review_approved: "DPAA, code quality, code review guard가 모두 만족되었다고 확인하고 관련 evidence를 복구합니다.",
+          document: "review_approved 이후 문서화 단계까지 진행했다고 확인하고 관련 evidence를 복구합니다.",
+          commit: "문서화까지 완료되어 commit 단계까지 진행했다고 확인하고 관련 evidence를 복구합니다.",
+          push: "DPAA, code quality, code review, commit approval이 완료되어 push 단계라고 확인하고 transition evidence를 복구합니다.",
+          done: "workflow가 완료되었다고 표시합니다. 실행 evidence는 복구하지 않습니다.",
         };
         const ok = !ctx.hasUI || (await ctx.ui.confirm(
           "Workflow state 수동 변경 승인 확인",
@@ -682,8 +681,8 @@ export default function (pi: ExtensionAPI) {
             "",
             recoveryClaims[next],
             "",
-            "예: 위 내용을 내가 확인하고 phase/token을 복구합니다.",
-            "아니오: phase와 token을 변경하지 않습니다.",
+            "예: 위 내용을 내가 확인하고 phase/evidence를 복구합니다.",
+            "아니오: phase와 evidence를 변경하지 않습니다.",
             "",
             "주의: 이 명령은 사용자의 명시적 복구 승인으로 간주됩니다. 자동 파일 복구는 여전히 신뢰하지 않습니다.",
           ].join("\n"),
@@ -695,27 +694,30 @@ export default function (pi: ExtensionAPI) {
         state.codeQualityGuardSatisfiedToken = null;
         state.pushExecutionGuardSatisfiedToken = null;
         state.codeReviewGuardSatisfiedToken = null;
-        const phaseIndex = WORKFLOW_PHASES.indexOf(next);
-        const tokenNotices: string[] = [];
-        if (phaseIndex >= WORKFLOW_PHASES.indexOf("implement") && next !== "done") {
+        const phaseIndex = phases.indexOf(next);
+        const evidenceNotices: string[] = [];
+        if (phaseIndex >= phases.indexOf("implement") && next !== "done") {
           state.dpaaGuardSatisfiedToken = { workflowId: state.workflow.id, issuedAt: Date.now(), reason: "manual_state_restore" };
-          tokenNotices.push("DPAA guard satisfied → DPAA guard satisfied token 발급");
+          evidenceNotices.push("DPAA guard satisfied → transition evidence 복구");
         }
-        if (phaseIndex >= WORKFLOW_PHASES.indexOf("review_approved") && next !== "done") {
+        if (phaseIndex >= phases.indexOf("review_approved") && next !== "done") {
           state.codeQualityGuardSatisfiedToken = { workflowId: state.workflow.id, issuedAt: Date.now(), reason: "manual_state_restore" };
           state.codeReviewGuardSatisfiedToken = { critical: 0, major: 0, minor: 0, timestamp: Date.now() };
-          tokenNotices.push("Code quality guard satisfied → code quality guard satisfied token 발급");
-          tokenNotices.push("Code review guard satisfied → code review guard satisfied token 발급");
+          evidenceNotices.push("Code quality guard satisfied → quality evidence 복구");
+          evidenceNotices.push("Code review guard satisfied → review evidence 복구");
         }
-        if (phaseIndex >= WORKFLOW_PHASES.indexOf("push") && next !== "done") {
+        if (phaseIndex >= phases.indexOf("push") && next !== "done") {
           state.pushExecutionGuardSatisfiedToken = { workflowId: state.workflow.id, issuedAt: Date.now(), reason: "manual_state_restore" };
-          tokenNotices.push("Push execution guard satisfied → push execution guard satisfied token 발급");
+          if (!state.workflow.history.some((item) => item.from === "commit" && item.to === "push")) {
+            state.workflow.history.push({ from: "commit", to: "push", reason: "manual_state_restore", timestamp: Date.now() });
+          }
+          evidenceNotices.push("Push phase approved → transition evidence 복구");
         }
         saveWorkflow(state.workflow);
         ctx.ui.notify([
           formatWorkflowStatus(state.workflow),
           "",
-          tokenNotices.length > 0 ? `수동 state 복구 완료: ${tokenNotices.join(", ")}` : "수동 state 복구 완료: 발급할 권한 token 없음",
+          evidenceNotices.length > 0 ? `수동 state 복구 완료: ${evidenceNotices.join(", ")}` : "수동 state 복구 완료: 복구할 guard evidence 없음",
           "",
           formatGuardMemoryStatus(),
         ].join("\n"), "warning");
@@ -792,19 +794,19 @@ export default function (pi: ExtensionAPI) {
     ];
     if (transitions.some((item) => item.from === "plan_review" && item.to === "implement")) {
       state.dpaaGuardSatisfiedToken = { workflowId, issuedAt: Date.now(), reason: "natural_language_approval" };
-      notices.push("[Workflow] DPAA guard satisfied: DPAA guard satisfied token recorded in current-session memory.");
+      notices.push("[Workflow] DPAA guard satisfied: transition evidence recorded in current-session memory.");
     }
     if (transitions.some((item) => item.from === "code_review" && item.to === "review_approved")) {
       state.codeQualityGuardSatisfiedToken = { workflowId, issuedAt: Date.now(), reason: "automated_review_passed" };
       state.codeReviewGuardSatisfiedToken = { critical: 0, major: 0, minor: 0, timestamp: Date.now() };
       state.recentVerificationCommands.push({ command: "codeQualityGuard", timestamp: Date.now(), phase: "code_review" });
       if (state.recentVerificationCommands.length > 20) state.recentVerificationCommands.shift();
-      notices.push("[Workflow] Automated review approved: code review token recorded after review/quality gates passed.");
-      notices.push("[Workflow] Code quality guard satisfied: code quality guard satisfied token recorded in current-session memory.");
+      notices.push("[Workflow] Automated review approved: review/quality evidence recorded in current-session memory.");
+      notices.push("[Workflow] Code quality guard satisfied: quality evidence recorded in current-session memory.");
     }
     if (transitions.some((item) => item.from === "commit" && item.to === "push")) {
       state.pushExecutionGuardSatisfiedToken = { workflowId, issuedAt: Date.now(), reason: "natural_language_approval" };
-      notices.push("[Workflow] Push execution guard satisfied: push execution guard satisfied token recorded in current-session memory.");
+      notices.push("[Workflow] Push phase approved: commit → push transition evidence recorded in workflow history.");
     }
     notices.push("Proceed according to the current phase. Ask for user confirmation before moving to the next phase.");
 
@@ -914,29 +916,32 @@ export default function (pi: ExtensionAPI) {
         };
       }
 
-      if (state.pushExecutionGuardSatisfiedToken?.workflowId !== state.workflow.id) {
+      if (!state.workflow.history.some((item) => item.from === "commit" && item.to === "push")) {
         writeFieldLogEvent({
-          type: "gate.failed",
+          type: "phase.violation",
           category: "phase",
           severity: "blocker",
           workflow: state.workflow,
-          summary: "Push phase authority token was missing.",
-          expected: "The current Pi session has an in-memory push execution guard token.",
-          actual: "Push phase authority token absent.",
-          impact: "Push is blocked because persisted state alone is not trusted as authority.",
-          primaryMessage: "Missing push execution guard satisfied token.",
+          summary: "git push was attempted without commit → push transition history.",
+          expected: "Workflow history contains commit → push before git push.",
+          actual: "Missing commit → push transition history.",
+          impact: "Push is blocked to prevent skipped workflow phases.",
+          primaryMessage: "Missing workflow transition history: commit → push",
           command: cmd,
           improvementKind: "workflow-rule",
         });
         return {
           block: true,
           reason: formatGateBlocked({
-            gate: "Push Phase Authority",
-            why: "The workflow is in push, but this pi session has no in-memory push execution guard satisfied token.",
-            next: ["Return to the proper workflow phase", "Advance commit → push through /workflow approve or interactive natural-language approval", "Or explicitly restore with /workflow state push", "Retry git push after the token is issued"],
+            gate: "Workflow Transition History",
+            why: "The workflow is in push, but commit → push transition history is missing.",
+            next: ["Return to commit phase", "Advance commit → push through /workflow approve or explicit natural-language approval", "Retry git push"],
           }),
         };
       }
+
+      // Push authority is derived from strict workflow phase/history validation.
+      // Diagnostic guard evidence is not the policy source.
     }
 
     const policySkip = consumeSkipToken("policy-scan");
@@ -955,7 +960,7 @@ export default function (pi: ExtensionAPI) {
           severity: "blocker",
           workflow: state.workflow,
           summary: `Push policy scan blocked git push (attempt ${failures}/${GATE_SKIP_THRESHOLD}).`,
-          expected: "Risky push requires policy review or explicit skip token.",
+          expected: "Risky push requires policy review or explicit one-use exception.",
           actual: `Policy findings: ${policyScan.findings.map((finding) => finding.category).join(", ")}`,
           impact: "Push is blocked until changes are reviewed or user approves skip.",
           primaryMessage: formatPushPolicyScanBlocked(policyScan),
@@ -999,99 +1004,8 @@ export default function (pi: ExtensionAPI) {
       }
     }
 
-    const skip = consumeSkipToken("push-review");
-    if (skip) {
-      state.codeReviewGuardSatisfiedToken = null;
-      return;
-    }
-
-    // ── Gate 1: code review guard satisfied token 없음 ───────────────────────────
-    if (!state.codeReviewGuardSatisfiedToken) {
-      writeFieldLogEvent({
-        type: "gate.failed",
-        category: "push-policy",
-        severity: "blocker",
-        workflow: state.workflow,
-        summary: "Push review token was missing before git push.",
-        expected: "Code review guard token exists before push.",
-        actual: "Code review guard token absent.",
-        impact: "Push is blocked until code review guard is confirmed.",
-        primaryMessage: "Missing push review token.",
-        command: cmd,
-        improvementKind: "workflow-rule",
-      });
-      state.gateFailures.set("push-review", (state.gateFailures.get("push-review") ?? 0) + 1);
-      return {
-        block: true,
-        reason: formatGateBlocked({
-          gate: "Push Review",
-          why: "The push review token is missing before git push.",
-          next: ["Run /skill:code-review-gate", "Use /workflow approve in code_review so the user explicitly confirms the review guard", "Retry git push"],
-          skip: "/workflow skip push-review <reason>",
-        }),
-      };
-    }
-
-    // ── Gate 2: TTL 만료 (60분) ──────────────────────────────────────────────
-    const ageMin = (Date.now() - state.codeReviewGuardSatisfiedToken.timestamp) / 60_000;
-    if (ageMin > 60) {
-      const elapsed = Math.floor(ageMin);
-      writeFieldLogEvent({
-        type: "gate.failed",
-        category: "push-policy",
-        severity: "blocker",
-        workflow: state.workflow,
-        summary: "Push review token expired before git push.",
-        expected: "Code review guard token is used within 60 minutes.",
-        actual: `${elapsed} minutes elapsed since token issue.`,
-        impact: "Push is blocked until review guard is refreshed.",
-        primaryMessage: `Push review token expired after ${elapsed} minutes.`,
-        command: cmd,
-        improvementKind: "workflow-rule",
-      });
-      state.codeReviewGuardSatisfiedToken = null;
-      return {
-        block: true,
-        reason: formatGateBlocked({
-          gate: "Push Review",
-          why: `The push review token expired after 60 minutes. (${elapsed} minutes elapsed)`,
-          next: ["Run /skill:code-review-gate again", "Use /workflow approve in code_review so the user explicitly confirms the review guard again", "Retry git push"],
-          skip: "/workflow skip push-review <reason>",
-        }),
-      };
-    }
-
-    // ── Gate 3: Critical / Major 기준 미달 ───────────────────────────────────
-    const { critical, major } = state.codeReviewGuardSatisfiedToken;
-    if (critical > 0 || major > 2) {
-      const r = state.codeReviewGuardSatisfiedToken;
-      writeFieldLogEvent({
-        type: "gate.failed",
-        category: "push-policy",
-        severity: "blocker",
-        workflow: state.workflow,
-        summary: "Push review token did not meet severity threshold.",
-        expected: "Critical=0 and Major<=2 before push.",
-        actual: `Critical=${r.critical}, Major=${r.major}`,
-        impact: "Push is blocked until review findings are fixed or accepted through an explicit exception.",
-        primaryMessage: `Review threshold failed: Critical=${r.critical}, Major=${r.major}`,
-        command: cmd,
-        improvementKind: "workflow-rule",
-      });
-      state.codeReviewGuardSatisfiedToken = null;
-      return {
-        block: true,
-        reason: formatGateBlocked({
-          gate: "Push Review",
-          why: `The review did not meet the push threshold. Critical=${r.critical} (required 0), Major=${r.major} (required ≤2)`,
-          next: ["Fix the reported issues", "Run /skill:code-review-gate again", "Retry git push"],
-          skip: "/workflow skip push-review <reason>",
-        }),
-      };
-    }
-
-    // ✅ 모든 게이트 통과 → 토큰 소비 (단일 push에 1회만 유효)
-    state.codeReviewGuardSatisfiedToken = null;
+    // Review authority is enforced during code_review → review_approved and commit → push.
+    // `git push` only rechecks workspace, phase, transition history, and push policy.
   });
 
   // ── session_start: 상태 초기화 + 세션 컨텍스트 알림 ───────────────────────
@@ -1124,7 +1038,7 @@ export default function (pi: ExtensionAPI) {
           return current.getSuggestions(lines, cursorLine, cursorCol, options);
         }
         const prefix = match[1] ?? "";
-        const items = WORKFLOW_PHASES
+        const items = sharedWorkflowPhases()
           .filter((phase) => phase.startsWith(prefix))
           .map((phase) => ({ value: phase, label: phase }));
         return { prefix, items };
@@ -1162,11 +1076,11 @@ export default function (pi: ExtensionAPI) {
     const branch = root ? getBranch(root) : "unknown";
 
     const authLines = [
-      "[Workflow Authority Memory]",
-      `DPAA guard satisfied token: ${state.workflow && state.dpaaGuardSatisfiedToken?.workflowId === state.workflow.id ? "present" : "absent"}`,
-      `Code quality guard satisfied token: ${state.workflow && state.codeQualityGuardSatisfiedToken?.workflowId === state.workflow.id ? "present" : "absent"}`,
-      `Code review guard satisfied token: ${state.codeReviewGuardSatisfiedToken ? "present" : "absent"}`,
-      `Push execution guard satisfied token: ${state.workflow && state.pushExecutionGuardSatisfiedToken?.workflowId === state.workflow.id ? "present" : "absent"}`,
+      "[Workflow Guard Evidence]",
+      `DPAA guard evidence: ${state.workflow && state.dpaaGuardSatisfiedToken?.workflowId === state.workflow.id ? "present" : "absent"}`,
+      `Code quality guard evidence: ${state.workflow && state.codeQualityGuardSatisfiedToken?.workflowId === state.workflow.id ? "present" : "absent"}`,
+      `Code review guard evidence: ${state.codeReviewGuardSatisfiedToken ? "present" : "absent"}`,
+      `Push transition evidence: ${state.workflow && state.pushExecutionGuardSatisfiedToken?.workflowId === state.workflow.id ? "present" : "absent"}`,
       `Policy scan approvals this session: ${state.policyApprovals.length}`,
     ].join("\n");
 

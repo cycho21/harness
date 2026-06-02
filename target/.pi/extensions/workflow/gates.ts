@@ -14,7 +14,7 @@ const PI_ROOT = path.join(HARNESS_ROOT, ".pi");
 const DPAA_VENV_DIR = path.join(PI_ROOT, ".venv");
 const CORENLP_DIR = path.join(PI_ROOT, "corenlp");
 
-export type WorkflowGate = "dpaa" | "code-quality" | "push-review" | "policy-scan";
+export type WorkflowGate = "dpaa" | "code-quality" | "policy-scan";
 
 function quoteCommand(command: string): string {
   return `"${escapeForDoubleQuotedArg(command)}"`;
@@ -192,7 +192,7 @@ export function runCodeQualityGate(workflow: WorkflowInstance): { ok: boolean; m
       workflow,
       summary: "Code quality gate was skipped by explicit user approval.",
       expected: "Code quality gate runs before review_approved.",
-      actual: `Skip token consumed: ${skip.reason}`,
+      actual: `One-use exception consumed: ${skip.reason}`,
       impact: "Harness may need better project-specific code quality configuration if skips repeat.",
       primaryMessage: skip.reason,
       improvementKind: "doctor-check",
@@ -275,7 +275,7 @@ export function runDpaaGate(workflow: WorkflowInstance, from: WorkflowPhase, to:
       toPhase: to,
       summary: "DPAA gate was skipped by explicit user approval.",
       expected: "DPAA validates the plan before implementation.",
-      actual: `Skip token consumed: ${skip.reason}`,
+      actual: `One-use exception consumed: ${skip.reason}`,
       impact: "Repeated DPAA skips may indicate false positives or missing workflow affordances.",
       primaryMessage: skip.reason,
       improvementKind: "dpaa-rule",
@@ -451,7 +451,7 @@ export function runDpaaGate(workflow: WorkflowInstance, from: WorkflowPhase, to:
               "Or propose a concrete rewrite based on the suggestion and ask the user to confirm",
               "Update the plan and run /workflow approve again",
             ],
-            skip: "/workflow skip dpaa <reason>  (SBADR shares the dpaa gate skip token)",
+            skip: "/workflow skip dpaa <reason>  (SBADR shares the dpaa gate one-use exception)",
           }),
           table([
             ["Item", "Value"],

@@ -13,29 +13,10 @@
       "Edit(.harness/authority/**)",
       "Write(.harness/authority/**)",
       "Edit(.harness/policy.yaml)",
-      "Write(.harness/policy.yaml)"
+      "Write(.harness/policy.yaml)",
+      "Edit(.harness/workflow-policy.json)",
+      "Write(.harness/workflow-policy.json)"
     ]
-  },
-  "sandbox": {
-    "enabled": true,
-    "allowUnsandboxedCommands": false,
-    "filesystem": {
-      "denyWrite": [
-        ".claude",
-        ".harness/state.json",
-        ".harness/workflow.json",
-        ".harness/.authority-runtime",
-        ".harness/authority",
-        ".harness/policy.yaml"
-      ],
-      "denyRead": [
-        ".harness/.authority-runtime",
-        ".harness/authority"
-      ],
-      "allowRead": [
-        "."
-      ]
-    }
   },
   "hooks": {
     "UserPromptSubmit": [

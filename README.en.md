@@ -4,7 +4,7 @@
 
 Pi workflow harness source repository.
 
-Pi workflow runtime files are isolated under `target/` so developing the harness from this repository root does not automatically load the harness extension, skills, or context files. In an initialized project, `AGENTS.md`, `.pi/`, and optional Claude Code workflow-gate files under `.claude/` and `.harness/` are placed at the project root.
+Pi workflow runtime files are isolated under `target/` so developing the harness from this repository root does not automatically load the harness extension, skills, or context files. In an initialized project, `AGENTS.md`, `.pi/`, and optional Claude Code workflow-gate files under `.claude/` and `.harness/` are placed at the project root. Claude Code and Pi share workflow policy declarations through `.harness/workflow-policy.json` while keeping runtime-specific adapters separate.
 
 ## Initialize in another project
 
@@ -85,20 +85,19 @@ curl -fsSL https://raw.githubusercontent.com/cycho21/harness/main/scripts/init-t
 curl -fsSL https://raw.githubusercontent.com/cycho21/harness/main/scripts/init-target-harness.sh | sh -s -- --component claude-workflow
 ```
 
-The Claude Code component installs `.claude/settings.json` with hooks and the built-in Bash sandbox enabled:
+The Claude Code component installs `.claude/settings.json` with workflow hooks. The built-in Bash sandbox is intentionally not enabled by default because it harms UX too much; the default guardrail is hook/reminder-driven workflow enforcement.
 
-- `PreToolUse` blocks file-tool writes to `.claude/**`, `.harness/state.json`, `.harness/authority/**`, and other protected gate paths.
+- `UserPromptSubmit` repeatedly reminds the agent of the current phase, next phase, no-skip rule, and subagent guidance.
+- `PreToolUse` blocks file-tool writes to `.claude/**`, `.harness/state.json`, `.harness/authority/**`, and other protected gate paths, then checks phase-appropriate tool use.
 - `PostToolUse` reevaluates artifacts and advances workflow state automatically when exit conditions pass.
-- `sandbox.enabled` restricts Bash subprocess access to gate state/authority files at the OS sandbox layer.
+- `.harness/workflow-policy.json` declares shared Pi/Claude phase order, auto-advance, approval-boundary, transition, reminder, and context-management policy. It is the SSOT for phase order and approval boundaries.
 - The component also installs DPAA/SBADR runtime files (`.pi/dpaa`, `.pi/sbadr`) plus codeQualityGuard, push policy scan, checkpoint/restore, and field-log support.
 
 Operating model:
 
-- Sandbox ON: Bash cannot access `.harness/.authority-runtime/**`, `.harness/state.json`, or `.harness/authority/**`, so session authority tokens act as a stronger guardrail.
-- Sandbox OFF: file-tool denies and PreToolUse command checks still run, but Bash-level bypasses are possible; treat the gate as UX guidance only.
-- Use `--dangerously-skip-permissions` or unattended runs only inside WSL2, a devcontainer, a custom container, or a VM.
-
-Note: Claude Code's built-in Bash sandbox does not support native Windows. On Windows, run Claude Code in WSL2, a devcontainer, a custom container, or a VM for sandbox enforcement.
+- Bash is not strongly sandboxed. To preserve UX, Claude Code uses reminders and PreToolUse checks as the default guardrail.
+- Normal work must advance only to the next workflow phase; skipped phases/manual state recovery are treated as abnormal recovery paths.
+- Context-heavy implementation, code review, large diff analysis, and log analysis should prefer subagents so the main agent remains a workflow controller with minimal context pollution. Pi and Claude prompts also inject the concise `[WORKFLOW HARD RULES]` block from `.harness/workflow-policy.json` to remind the agent about phase order, approval boundaries, the code-review fix loop, subagent use, and main-context hygiene. In `implement`, `code_review`, `document`, and `commit`, prompts also inject the current `[CONTEXT STRATEGY]`: what main keeps, what it avoids, and the expected subagent return format.
 
 Optional arguments:
 
@@ -191,6 +190,7 @@ Key runtime entrypoints:
 - `target/AGENTS.md`
 - `target/.pi/WORKFLOW.md`
 - `target/.pi/extensions/workflow.ts`
+- `target/.harness/workflow-policy.json`
 - `target/.pi/extensions/memory.ts`
 - `target/.pi/skills/`
 - `target/.pi/personas/`

@@ -1,6 +1,6 @@
 ---
 name: code-review-gate
-description: Run the review/fix loop during the `code_review` workflow phase. Report findings in Korean. Do not create approval tokens; the workflow extension asks the user to confirm guard satisfaction during `/workflow approve`.
+description: Run the review/fix loop during the `code_review` workflow phase. Report findings in Korean. Do not create approval artifacts; the workflow extension records review evidence during `/workflow approve` or `submit_review_package`.
 ---
 
 # Code Review Gate
@@ -24,6 +24,6 @@ Respond in Korean.
 
 ## Rules
 
-- Do not call or invent approval-token tools.
+- Do not call or invent approval/authority tools.
 - Do not claim the guard is approved on behalf of the user.
 - The extension, not the LLM, records guard satisfaction after explicit user confirmation.

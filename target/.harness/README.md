@@ -1,12 +1,12 @@
 # Claude Code Workflow Gate
 
-This directory contains the lightweight Claude Code port of the pi workflow gate. Claude Code integration lives in `.claude/`; workflow state, authority files, and compatibility proposal artifacts live here.
+This directory contains the lightweight Claude Code port of the pi workflow gate. Claude Code integration lives in `.claude/`; workflow state, shared policy, authority files, and compatibility proposal artifacts live here.
 
-The Claude Code component also enables the built-in Bash sandbox in `.claude/settings.json`. The sandbox blocks Bash subprocess reads/writes to authority/state paths, while the PreToolUse hook blocks Claude Code file tools (`Edit`, `Write`, `MultiEdit`) from touching the same paths.
+The Claude Code component does not enable the built-in Bash sandbox by default because the UX cost is high. Instead, `UserPromptSubmit` reminders keep workflow rules visible and the `PreToolUse` hook blocks Claude Code file tools (`Edit`, `Write`, `MultiEdit`) from touching protected paths or skipping phases.
 
 ## State flow
 
-The default phase model mirrors the pi workflow extension:
+The default phase model mirrors the pi workflow extension. Phase order and approval boundaries are declared in `.harness/workflow-policy.json`, which is the shared Pi/Claude policy SSOT:
 
 ```text
 interview -> plan -> plan_review -> implement -> code_review -> review_approved -> document -> commit -> push -> done
@@ -68,14 +68,14 @@ Additional ported pi commands:
 
 - `plan_review -> implement`: requires `plan-review.json` approval, then runs DPAA against `.ai/interview/plan.md` or `docs/superpowers/plans/*.md`. If CoreNLP is available or installable, SBADR runs after DPAA PASS.
 - `code_review -> review_approved`: requires `review-package.json` approval, then runs `HARNESS_CODE_QUALITY_GUARD_CMD` or Gradle `codeQualityGuard` when a Gradle project is detected.
-- `commit -> push`: scans risky changed paths and requires `push-approval.json` if the scan finds protected harness or secret-like files. `push-approval.json` may include a `signature` matching the policy scan. Successful approval issues a session-scoped `push_execution` token in `.harness/.authority-runtime/**`; `git push` is blocked without that token.
-- Push guard: blocks `git -C <path> push`, workspace/branch mismatches, missing `code_review` session token, and missing `push_execution` session token.
+- `commit -> push`: scans risky changed paths and requires `push-approval.json` if the scan finds protected harness or secret-like files. `push-approval.json` may include a `signature` matching the policy scan.
+- Push guard: blocks `git -C <path> push`, workspace/branch mismatches, and pushes outside the `push` phase.
 - Workspace checkpoints: stores staged/unstaged patches and untracked files under `.harness/checkpoints/<workflow-id>/` and can restore by prefix. Phase transitions create checkpoints; `/workflow:undo` and `/workflow:redo` restore workspace state as well as phase state.
 - Field logs: gate failures and policy blocks append JSONL events to `.project-memory/harness/events.jsonl`.
 - Workflow catalog: `/workflow:list` shows the active/persisted workflow and `.pi/workflows/*.md` catalog entries.
 - Natural-language approval: `UserPromptSubmit` detects explicit approvals such as `응 진행해` at approval boundaries and advances the workflow.
-- Prompt guidance: `UserPromptSubmit` injects current phase guidance as a system message each turn.
-- Skip tokens: `/workflow:skip <gate> <reason>` issues a one-use, 10-minute session token stored under `.harness/.authority-runtime/**`.
+- Prompt guidance: `UserPromptSubmit` injects current phase guidance as a system message each turn, including next-phase/no-skip/subagent reminders from `.harness/workflow-policy.json`.
+- Context management: implementation, code review, large diff analysis, and log analysis should prefer subagents so the main agent remains a workflow controller.
 
 ## Claude-writable artifacts
 
@@ -101,7 +101,8 @@ The hook and Claude Code settings treat these as protected paths. Claude should 
 - `.claude/**`
 - `.harness/state.json`
 - `.harness/workflow.json`
-- `.harness/.authority-runtime/**` — session-scoped authority tokens; hook only; ignored by `.harness/.gitignore`
+- `.harness/.authority-runtime/**` — generated runtime recovery/skip artifacts; hook only; ignored by `.harness/.gitignore`
+- `.harness/workflow-policy.json` — shared Pi/Claude workflow policy declaration
 - `.harness/checkpoints/**`, `.harness/dpaa-runs/**` — generated runtime artifacts; ignored by `.harness/.gitignore`
 - `.harness/authority/**`
 - `.harness/policy.yaml`

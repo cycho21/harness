@@ -39,7 +39,7 @@ interview
 - Natural-language approval is accepted only from the interactive user.
 - If a guard blocks, report the blocker and wait. Do not bypass or simulate guard results.
 - Modifying `.pi/extensions/**` or `target/.pi/extensions/**` requires explicit interactive user approval for that tool call. The approval is extension in-memory only; do not create approval files.
-- Do not create approval artifacts or token files. Guard satisfaction is extension memory only.
+- Do not create approval artifacts or authority files. Guard satisfaction comes from workflow phase, transition history, and extension-recorded evidence.
 - Keep changes surgical: touch only files required by the current phase/task.
 
 ## Mechanical Guards
@@ -48,12 +48,12 @@ interview
 |------|------------------------|-------|
 | DPAA | `plan_review → implement` | Checks the plan and blocks ambiguous implementation. |
 | Code quality | `code_review → review_approved` | Runs `codeQualityGuard` / `HARNESS_CODE_QUALITY_GUARD_CMD`. |
-| Code review | `code_review → review_approved` | `submit_review_package` must include main self-review, independent reviewer/subagent review, quality-gate summary, Critical=0, and Major≤2 before token issue. |
+| Code review | `code_review → review_approved` | `submit_review_package` must include main self-review, independent reviewer/subagent review, quality-gate summary, Critical=0, and Major≤2 before review approval. |
 | Workspace | `git push` | Blocks wrong git root/branch and `git -C` push bypass. |
 | Policy scan | `commit → push`, rechecked at `git push` | Prompts user for risky build/config/migration/Docker/CI/delete/large-change pushes. The approval is reused if the workspace risk signature is unchanged. |
 | Push execution | `git push` | Requires `push` phase and in-memory push guard. |
 
-Skip tokens exist only for exceptional, user-confirmed cases via `/workflow skip <gate> <reason>`.
+One-use gate exceptions exist only for exceptional, user-confirmed cases via `/workflow skip <gate> <reason>`.
 
 ## Artifact Conventions
 

@@ -53,6 +53,14 @@ class TestStateTs:
         assert "getWorkflowStateDir" in src
         assert "getWorkflowStateDir" in (EXT_DIR / "storage.ts").read_text(encoding="utf-8")
 
+    def test_advance_workflow_uses_shared_policy_for_phase_order(self):
+        src = _src("state.ts")
+        assert "sharedNextPhase" in src
+        assert "isSharedAutoAdvancePhase" in src
+        assert "isSharedTransitionAllowed" in src
+        assert "WORKFLOW_PHASES.indexOf" not in src
+        assert "AUTO_ADVANCE_FROM_PHASES" not in src
+
     def test_advance_workflow_is_exported(self):
         src = _src("state.ts")
         assert "export async function advanceWorkflow" in src
@@ -65,6 +73,14 @@ class TestStateTs:
 # ---------------------------------------------------------------------------
 # workflow.ts — variable shadowing
 # ---------------------------------------------------------------------------
+
+class TestWorkflowTsPolicySOT:
+    def test_manual_state_uses_shared_policy_phase_helpers(self):
+        src = _workflow_src()
+        assert "sharedWorkflowPhases" in src
+        assert "isSharedWorkflowPhase" in src
+        assert "WORKFLOW_PHASES" not in src
+
 
 class TestWorkflowTsShadowing:
     def test_no_const_path_shadowing_node_path(self):
@@ -143,9 +159,9 @@ class TestGatesTsSbadr:
             "so CoreNLP startup progress is visible"
         )
 
-    def test_sbadr_skip_uses_dpaa_gate_token(self):
+    def test_sbadr_skip_uses_dpaa_gate_exception(self):
         src = _src("gates.ts")
-        assert "dpaa gate skip token" in src.lower() or "shares the dpaa gate skip token" in src
+        assert "dpaa gate one-use exception" in src.lower() or "shares the dpaa gate one-use exception" in src
 
     def test_install_core_nlp_handles_both_platforms(self):
         src = _src("gates.ts")
