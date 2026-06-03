@@ -23,6 +23,8 @@ param(
 
     [switch]$Force,
 
+    [switch]$Clean,
+
     [switch]$DryRun,
 
     [ValidateSet("all", "workflow", "memory", "claude-workflow")]
@@ -52,20 +54,42 @@ function Get-RelativePath([string]$Base, [string]$Path) {
     return [System.Uri]::UnescapeDataString($baseUri.MakeRelativeUri($pathUri).ToString()).Replace('/', [System.IO.Path]::DirectorySeparatorChar)
 }
 
+function Get-ComponentRoots([string]$ComponentName) {
+    switch ($ComponentName) {
+        "workflow" { return @("AGENTS.md", ".pi/.gitignore", ".pi/LOCAL.md", ".pi/WORKFLOW.md", ".pi/GOVERNANCE.md", ".pi/extensions/workflow.ts", ".pi/extensions/workflow", ".harness/workflow-policy.json", ".pi/dpaa", ".pi/workflows", ".pi/skills", ".pi/personas", ".pi/pyproject.toml", ".pi/schemas/harness-field-log-event.schema.json", ".pi/sbadr", ".pi/setup_corenlp.sh", ".pi/setup_corenlp.ps1") }
+        "memory" { return @("AGENTS.md", ".pi/.gitignore", ".pi/LOCAL.md", ".pi/extensions/memory.ts", ".pi/schemas/harness-memory-entry.schema.json") }
+        "claude-workflow" { return @(".claude/settings.json", ".claude/hooks/workflow-gate.cjs", ".claude/commands/workflow", ".harness/.gitignore", ".harness/README.md", ".harness/workflow-policy.json", ".harness/state.json", ".harness/workflow.json", ".harness/proposal", ".harness/authority", ".ai/interview", ".pi/dpaa", ".pi/sbadr", ".pi/pyproject.toml", ".pi/setup_corenlp.sh", ".pi/setup_corenlp.ps1") }
+    }
+}
+
+function Get-SelectedComponentRoots {
+    $components = $Component
+    if ($components -contains "all") { $components = @("workflow", "memory") }
+    $roots = New-Object System.Collections.Generic.List[string]
+    foreach ($componentName in $components) {
+        foreach ($root in (Get-ComponentRoots $componentName)) { $roots.Add($root) }
+    }
+    return $roots | Select-Object -Unique
+}
+
 function Test-ComponentSelected([string]$Rel) {
     $normalized = $Rel.Replace('\', '/')
     $components = $Component
     if ($components -contains "all") { $components = @("workflow", "memory") }
 
     foreach ($componentName in $components) {
-        $roots = switch ($componentName) {
-            "workflow" { @("AGENTS.md", ".pi/.gitignore", ".pi/LOCAL.md", ".pi/WORKFLOW.md", ".pi/GOVERNANCE.md", ".pi/extensions/workflow.ts", ".pi/extensions/workflow", ".harness/workflow-policy.json", ".pi/dpaa", ".pi/workflows", ".pi/skills", ".pi/personas", ".pi/pyproject.toml", ".pi/schemas/harness-field-log-event.schema.json", ".pi/sbadr", ".pi/setup_corenlp.sh", ".pi/setup_corenlp.ps1") }
-            "memory" { @("AGENTS.md", ".pi/.gitignore", ".pi/LOCAL.md", ".pi/extensions/memory.ts", ".pi/schemas/harness-memory-entry.schema.json") }
-            "claude-workflow" { @(".claude/settings.json", ".claude/hooks/workflow-gate.cjs", ".claude/commands/workflow", ".harness/.gitignore", ".harness/README.md", ".harness/workflow-policy.json", ".harness/state.json", ".harness/workflow.json", ".harness/proposal", ".harness/authority", ".ai/interview", ".pi/dpaa", ".pi/sbadr", ".pi/pyproject.toml", ".pi/setup_corenlp.sh", ".pi/setup_corenlp.ps1") }
-        }
+        $roots = Get-ComponentRoots $componentName
         foreach ($root in $roots) {
             if ($normalized -eq $root -or $normalized.StartsWith($root.TrimEnd('/') + "/")) { return $true }
         }
+    }
+    return $false
+}
+
+function Test-PreserveOnClean([string]$Rel) {
+    $normalized = $Rel.Replace('\\', '/')
+    foreach ($root in @("AGENTS.md", ".pi/LOCAL.md", ".ai/interview")) {
+        if ($normalized -eq $root -or $normalized.StartsWith($root.TrimEnd('/') + "/")) { return $true }
     }
     return $false
 }
@@ -104,6 +128,7 @@ try {
     if ($Ref) { Write-Host "ref:    $Ref" }
     Write-Host ("components: {0}" -f ($Component -join ", "))
     if ($DryRun) { Write-Host "mode:   dry-run" }
+    if ($Clean) { Write-Host "mode:   clean reinstall (managed runtime paths only)" }
 
     $cloneArgs = @("clone", "--depth", "1")
     if ($Ref) { $cloneArgs += @("--branch", $Ref) }
@@ -115,6 +140,22 @@ try {
     $source = Join-Path $cloneDir $SourceSubdir
     if (-not (Test-Path -LiteralPath $source -PathType Container)) {
         throw "Source template directory not found in repo: $SourceSubdir"
+    }
+
+    if ($Clean) {
+        $preserveOnClean = @("AGENTS.md", ".pi/LOCAL.md", ".ai/interview")
+        foreach ($root in (Get-SelectedComponentRoots)) {
+            $normalizedRoot = $root.Replace('\\', '/')
+            if ($preserveOnClean -contains $normalizedRoot) {
+                Write-Host ("preserve   {0}" -f $root)
+                continue
+            }
+            $targetRoot = Join-Path $destPath $root
+            if (Test-Path -LiteralPath $targetRoot) {
+                Write-Host ("clean      {0}" -f $root)
+                if (-not $DryRun) { Remove-Item -LiteralPath $targetRoot -Recurse -Force }
+            }
+        }
     }
 
     $copied = 0
@@ -129,7 +170,7 @@ try {
         $target = Join-Path $destPath $rel
         $exists = Test-Path -LiteralPath $target
 
-        if ($exists -and -not $Force) {
+        if ($exists -and (($Clean -and (Test-PreserveOnClean $rel)) -or (-not ($Force -or $Clean)))) {
             Write-Host ("skip       {0}" -f $rel)
             $script:skipped++
             return
@@ -143,7 +184,7 @@ try {
             if (-not (Test-Path -LiteralPath $parent)) {
                 New-Item -ItemType Directory -Path $parent | Out-Null
             }
-            Copy-Item -LiteralPath $_.FullName -Destination $target -Force:$Force
+            Copy-Item -LiteralPath $_.FullName -Destination $target -Force:($Force -or $Clean)
         }
 
         if ($exists) { $script:overwritten++ } else { $script:copied++ }

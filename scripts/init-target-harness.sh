@@ -6,6 +6,7 @@ DEST="$(pwd)"
 REF=""
 SOURCE_SUBDIR="target"
 FORCE=0
+CLEAN=0
 DRY_RUN=0
 KEEP_TEMP=0
 COMPONENTS="all"
@@ -20,6 +21,7 @@ Options:
   --ref REF           Branch or tag to clone
   --source-subdir DIR Template directory inside repo (default: target)
   --force             Overwrite existing files
+  --clean             Clean managed harness runtime paths before reinstalling; preserves AGENTS.md, .pi/LOCAL.md, and .ai/interview artifacts
   --dry-run           Print planned changes without writing files
   --component NAME    Component to initialize: all, workflow, memory, claude-workflow (repeatable; default: all)
   --keep-temp         Keep temporary clone directory
@@ -39,6 +41,7 @@ while [ "$#" -gt 0 ]; do
     --ref) REF="$2"; shift 2 ;;
     --source-subdir) SOURCE_SUBDIR="$2"; shift 2 ;;
     --force) FORCE=1; shift ;;
+    --clean) CLEAN=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --component) if [ "$COMPONENTS" = "all" ]; then COMPONENTS="$2"; else COMPONENTS="$COMPONENTS $2"; fi; shift 2 ;;
     --keep-temp) KEEP_TEMP=1; shift ;;
@@ -68,6 +71,7 @@ echo "dest:   $DEST"
 [ -n "$REF" ] && echo "ref:    $REF"
 echo "components: $COMPONENTS"
 [ "$DRY_RUN" -eq 1 ] && echo "mode:   dry-run"
+[ "$CLEAN" -eq 1 ] && echo "mode:   clean reinstall (managed runtime paths only)"
 
 if [ -n "$REF" ]; then
   git clone --depth 1 --branch "$REF" "$REPO" "$CLONE_DIR"
@@ -91,6 +95,30 @@ component_selected() {
   return 1
 }
 
+component_roots() {
+  component=$1
+  case "$component" in
+    workflow)
+      printf '%s\n' AGENTS.md .pi/.gitignore .pi/LOCAL.md .pi/WORKFLOW.md .pi/GOVERNANCE.md .pi/extensions/workflow.ts .pi/extensions/workflow .harness/workflow-policy.json .pi/dpaa .pi/workflows .pi/skills .pi/personas .pi/pyproject.toml .pi/schemas/harness-field-log-event.schema.json .pi/sbadr .pi/setup_corenlp.sh .pi/setup_corenlp.ps1 ;;
+    memory)
+      printf '%s\n' AGENTS.md .pi/.gitignore .pi/LOCAL.md .pi/extensions/memory.ts .pi/schemas/harness-memory-entry.schema.json ;;
+    claude-workflow)
+      printf '%s\n' .claude/settings.json .claude/hooks/workflow-gate.cjs .claude/commands/workflow .harness/.gitignore .harness/README.md .harness/workflow-policy.json .harness/state.json .harness/workflow.json .harness/proposal .harness/authority .ai/interview .pi/dpaa .pi/sbadr .pi/pyproject.toml .pi/setup_corenlp.sh .pi/setup_corenlp.ps1 ;;
+    *) echo "Unknown component: $component" >&2; exit 2 ;;
+  esac
+}
+
+selected_component_roots() {
+  for component in $COMPONENTS; do
+    if [ "$component" = "all" ]; then
+      component_roots workflow
+      component_roots memory
+    else
+      component_roots "$component"
+    fi
+  done | sort -u
+}
+
 component_selected_with() {
   component=$1
   rel=$2
@@ -112,6 +140,31 @@ component_selected_with() {
   return 1
 }
 
+if [ "$CLEAN" -eq 1 ]; then
+  selected_component_roots | while IFS= read -r ROOT; do
+    case "$ROOT" in
+      AGENTS.md|.pi/LOCAL.md|.ai/interview)
+        printf 'preserve   %s\n' "$ROOT"
+        continue ;;
+    esac
+    TARGET_ROOT="$DEST/$ROOT"
+    if [ -e "$TARGET_ROOT" ]; then
+      printf 'clean      %s\n' "$ROOT"
+      if [ "$DRY_RUN" -ne 1 ]; then
+        rm -rf "$TARGET_ROOT"
+      fi
+    fi
+  done
+fi
+
+preserve_on_clean() {
+  rel=$1
+  case "$rel" in
+    AGENTS.md|.pi/LOCAL.md|.ai/interview|.ai/interview/*) return 0 ;;
+  esac
+  return 1
+}
+
 COPIED=0
 SKIPPED=0
 OVERWRITTEN=0
@@ -129,7 +182,7 @@ find "$SOURCE" -type f \
     component_selected "$REL" || continue
     TARGET="$DEST/$REL"
 
-    if [ -e "$TARGET" ] && [ "$FORCE" -ne 1 ]; then
+    if [ -e "$TARGET" ] && { { [ "$CLEAN" -eq 1 ] && preserve_on_clean "$REL"; } || { [ "$FORCE" -ne 1 ] && [ "$CLEAN" -ne 1 ]; }; }; then
       printf 'skip       %s\n' "$REL"
       SKIPPED=$((SKIPPED + 1))
     else
