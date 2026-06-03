@@ -50,6 +50,19 @@ powershell -ExecutionPolicy Bypass -File .pi/setup_corenlp.ps1
 
 Requires Java 17+ and downloads ~500 MB. DPAA and SBADR are complementary: DPAA covers multi-layer plan quality (structural, referential, temporal, verification) in a rule-based, server-free way; SBADR adds deep syntactic NLP analysis for English text.
 
+Separate enhanced interview commands are available for new feature discovery:
+
+```text
+/feature-interview <feature-name or rough idea>
+/feature-planning-room <feature-name or rough idea>
+```
+
+`/feature-interview` is the deep 1:1 interview mode. It uses `.ai/interview/feature-interview-protocol.md` as the shared protocol, so Pi's `feature-interview` skill and Claude Code's `/feature-interview` command follow the same rules.
+
+`/feature-planning-room` is the CLI-first, GUI-ready meeting-room mode. It uses `.ai/interview/feature-planning-room-protocol.md` as the shared protocol and is designed to produce a participant roster, survey-style CLI packets, round-based facilitation, cross-role questions, decision logs, conflict logs, ambiguity registers, `session-state.json`, and `session-events.jsonl` so a future GUI chat can render the same session. Survey responses support both choice answers and multiple subjective answers in one message using `ID=value` or `ID:` blocks.
+
+Both commands write artifacts under `.ai/interview/<feature-slug>/`: product, design, frontend, backend, integration PLAN documents plus ambiguity tracking. Korean `.ko.md` files are the human source of truth, and English `.md` files are DPAA/SBADR-friendly machine-check artifacts.
+
 Harness failures are logged locally under `.project-memory/harness/events.jsonl` when gates block or are explicitly skipped. Review and export redacted logs with:
 
 ```text
@@ -91,7 +104,7 @@ The Claude Code component installs `.claude/settings.json` with workflow hooks. 
 - `PreToolUse` blocks file-tool writes to `.claude/**`, `.harness/state.json`, `.harness/authority/**`, and other protected gate paths, then checks phase-appropriate tool use.
 - `PostToolUse` reevaluates artifacts and advances workflow state automatically when exit conditions pass.
 - `.harness/workflow-policy.json` declares shared Pi/Claude phase order, auto-advance, approval-boundary, transition, reminder, and context-management policy. It is the SSOT for phase order and approval boundaries.
-- The component also installs DPAA/SBADR runtime files (`.pi/dpaa`, `.pi/sbadr`) plus codeQualityGuard, push policy scan, checkpoint/restore, and field-log support.
+- The component also installs DPAA/SBADR runtime files (`.pi/dpaa`, `.pi/sbadr`) plus the shared enhanced feature interview protocols (`/feature-interview`, `/feature-planning-room`), codeQualityGuard, push policy scan, checkpoint/restore, and field-log support.
 
 Operating model:
 
