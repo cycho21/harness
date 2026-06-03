@@ -26,8 +26,23 @@ Write-Host "──────────────────────�
 if (-not (Get-Command java -ErrorAction SilentlyContinue)) {
     throw "java not found. Install Java 17+ and retry."
 }
-# java -version writes to stderr; merge streams with 2>&1 and join to a single string.
-$javaVerRaw = (& java -version 2>&1) -join " "
+# java -version writes to stderr. Capture it via ProcessStartInfo so
+# PowerShell does not turn normal stderr output into NativeCommandError when
+# $ErrorActionPreference is Stop.
+$javaInfo = New-Object System.Diagnostics.ProcessStartInfo
+$javaInfo.FileName = "java"
+$javaInfo.Arguments = "-version"
+$javaInfo.UseShellExecute = $false
+$javaInfo.RedirectStandardOutput = $true
+$javaInfo.RedirectStandardError = $true
+$javaProcess = [System.Diagnostics.Process]::Start($javaInfo)
+$javaStdout = $javaProcess.StandardOutput.ReadToEnd()
+$javaStderr = $javaProcess.StandardError.ReadToEnd()
+$javaProcess.WaitForExit()
+if ($javaProcess.ExitCode -ne 0) {
+    throw "java -version failed with exit code $($javaProcess.ExitCode)."
+}
+$javaVerRaw = "$javaStdout $javaStderr"
 if ($javaVerRaw -match '"(\d+)') { $javaVer = [int]$Matches[1] } else { $javaVer = 0 }
 if ($javaVer -lt 17) {
     throw "Java 17+ required (found Java $javaVer)."
