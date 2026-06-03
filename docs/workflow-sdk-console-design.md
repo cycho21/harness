@@ -680,6 +680,50 @@ No major TUI changes yet.
 - Add concise gate summaries.
 - Add debug/log commands for raw evidence.
 
+## Pi Documentation Review Plan
+
+Before implementation, review the current Pi documentation pages and record which capabilities affect this design.
+
+Known docs index:
+
+```text
+/docs/latest/quickstart
+/docs/latest/usage
+/docs/latest/providers
+/docs/latest/containerization
+/docs/latest/settings
+/docs/latest/keybindings
+/docs/latest/sessions
+/docs/latest/compaction
+/docs/latest/extensions
+/docs/latest/skills
+/docs/latest/prompt-templates
+/docs/latest/themes
+/docs/latest/packages
+/docs/latest/models
+/docs/latest/custom-provider
+/docs/latest/sdk
+/docs/latest/rpc
+/docs/latest/json
+/docs/latest/tui
+/docs/latest/session-format
+/docs/latest/windows
+/docs/latest/termux
+/docs/latest/tmux
+/docs/latest/terminal-setup
+/docs/latest/shell-aliases
+/docs/latest/development
+```
+
+Review goals:
+
+- identify extension APIs that replace standalone SDK work
+- identify TUI, theme, command, and rendering capabilities
+- identify model/provider/OAuth capabilities
+- identify session/state/compaction constraints
+- identify platform or terminal constraints relevant to workflow UX
+- update this design only with documented capabilities and remaining gaps
+
 ## Test Strategy
 
 Minimum tests:
