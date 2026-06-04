@@ -49,7 +49,7 @@ harness
 - workflow phase 관리
 - DPAA plan ambiguity gate
 - SBADR 영어 플랜 구문 모호성 분석 (Stanford CoreNLP 기반)
-- Pi/Claude 공통 강화 인터뷰 프로토콜 (`/feature-interview`, `/feature-planning-room`)과 역할별 PLAN 산출물 생성
+- Pi/Claude 공통 요구사항 수집 프로토콜 (`/requirements-room`, `/feature-interview`, `/feature-planning-room`)과 역할별 산출물 생성
 - code quality gate
 - push policy scan
 - workspace mismatch 방지
@@ -59,18 +59,21 @@ harness
 
 DPAA와 SBADR은 상호 보완적입니다.
 
-강화 인터뷰는 별도 명령으로 제공합니다.
+요구사항 수집/강화 인터뷰는 별도 명령으로 제공합니다.
 
 ```text
+/requirements-room <feature-name or rough idea>
 /feature-interview <feature-name or rough idea>
 /feature-planning-room <feature-name or rough idea>
 ```
 
+`/requirements-room`은 새 다직군 요구사항 회의 진행기입니다. 기존 기본 interview나 초안 성격의 planning-room과 분리되어, 기획/디자인/프론트엔드/백엔드/QA·통합/운영 관점을 짧은 round로 진행하고, 역할 간 계약, 충돌, 결정, 가정, open question을 요구사항 패키지로 정리합니다. `.ai/interview/requirements-room-protocol.md`를 공통 프로토콜로 사용하며 산출물은 `.ai/interview/<feature-slug>/requirements-room/` 아래에 저장됩니다.
+
 `/feature-interview`는 1:1 심층 인터뷰형입니다. 이 명령은 `.ai/interview/feature-interview-protocol.md`를 공통 프로토콜로 사용하므로 Pi의 `feature-interview` skill과 Claude Code의 `/feature-interview` 명령이 같은 기준으로 동작합니다.
 
-`/feature-planning-room`은 CLI 우선, GUI 확장 가능 회의실형 기능 기획 명령입니다. `.ai/interview/feature-planning-room-protocol.md`를 공통 프로토콜로 사용하고, 참석자 roster, 설문조사식 CLI 질문지, round 기반 진행, 역할 간 질문, decision log, conflict log, ambiguity register, `session-state.json`, `session-events.jsonl`을 생성하도록 설계되어 향후 GUI chat이 같은 산출물을 렌더링할 수 있습니다. 설문 응답은 객관식뿐 아니라 여러 주관식 문항도 `ID=value` 또는 `ID:` 블록으로 한 번에 받을 수 있습니다.
+`/feature-planning-room`은 CLI 우선, GUI 확장 가능 회의실형 기능 기획 명령 초안입니다. `.ai/interview/feature-planning-room-protocol.md`를 공통 프로토콜로 사용하고, 참석자 roster, 설문조사식 CLI 질문지, round 기반 진행, 역할 간 질문, decision log, conflict log, ambiguity register, `session-state.json`, `session-events.jsonl`을 생성하도록 설계되어 향후 GUI chat이 같은 산출물을 렌더링할 수 있습니다.
 
-산출물은 `.ai/interview/<feature-slug>/` 아래에 기획자, 디자이너, 프론트엔드, 백엔드, 통합 PLAN과 모호성 register로 저장됩니다. 한국어 `.ko.md` 파일은 사람용 source of truth이고, 영어 `.md` 파일은 DPAA/SBADR 친화적인 machine-check artifact입니다.
+산출물은 `.ai/interview/<feature-slug>/` 아래에 저장됩니다. 한국어 `.ko.md` 파일은 사람용 source of truth이고, 영어 `.md` 파일은 DPAA/SBADR 친화적인 machine-check artifact입니다.
 
 | | DPAA | SBADR |
 |---|---|---|
@@ -600,6 +603,14 @@ AGENTS.md
 /workflow skip <gate> <reason>
 /workflow abort
 /workflow dpaa-audit
+```
+
+### Requirements discovery
+
+```text
+/requirements-room <feature-name or rough idea>
+/feature-interview <feature-name or rough idea>
+/feature-planning-room <feature-name or rough idea>
 ```
 
 ### Memory

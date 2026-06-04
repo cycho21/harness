@@ -62,7 +62,7 @@ function Get-ComponentRoots([string]$ComponentName) {
     switch ($ComponentName) {
         "workflow" { return @("AGENTS.md", ".pi/.gitignore", ".pi/LOCAL.md", ".pi/WORKFLOW.md", ".pi/GOVERNANCE.md", ".pi/extensions/workflow.ts", ".pi/extensions/workflow", ".harness/workflow-policy.json", ".ai/interview", ".pi/dpaa", ".pi/workflows", ".pi/skills", ".pi/personas", ".pi/themes", ".pi/pyproject.toml", ".pi/schemas/harness-field-log-event.schema.json", ".pi/sbadr", ".pi/corenlp", ".pi/setup_corenlp.sh", ".pi/setup_corenlp.ps1") }
         "memory" { return @("AGENTS.md", ".pi/.gitignore", ".pi/LOCAL.md", ".pi/extensions/memory.ts", ".pi/schemas/harness-memory-entry.schema.json") }
-        "claude-workflow" { return @(".claude/settings.json", ".claude/hooks/workflow-gate.cjs", ".claude/commands/workflow", ".claude/commands/feature-interview.md", ".claude/commands/feature-planning-room.md", ".harness/.gitignore", ".harness/README.md", ".harness/workflow-policy.json", ".harness/state.json", ".harness/workflow.json", ".harness/proposal", ".harness/authority", ".ai/interview", ".pi/dpaa", ".pi/sbadr", ".pi/pyproject.toml", ".pi/setup_corenlp.sh", ".pi/setup_corenlp.ps1") }
+        "claude-workflow" { return @(".claude/settings.json", ".claude/hooks/workflow-gate.cjs", ".claude/commands/workflow", ".claude/commands/feature-interview.md", ".claude/commands/feature-planning-room.md", ".claude/commands/requirements-room.md", ".harness/.gitignore", ".harness/README.md", ".harness/workflow-policy.json", ".harness/state.json", ".harness/workflow.json", ".harness/proposal", ".harness/authority", ".ai/interview", ".pi/dpaa", ".pi/sbadr", ".pi/pyproject.toml", ".pi/setup_corenlp.sh", ".pi/setup_corenlp.ps1") }
     }
 }
 

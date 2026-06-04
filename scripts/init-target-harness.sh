@@ -104,7 +104,7 @@ component_roots() {
     memory)
       printf '%s\n' AGENTS.md .pi/.gitignore .pi/LOCAL.md .pi/extensions/memory.ts .pi/schemas/harness-memory-entry.schema.json ;;
     claude-workflow)
-      printf '%s\n' .claude/settings.json .claude/hooks/workflow-gate.cjs .claude/commands/workflow .claude/commands/feature-interview.md .claude/commands/feature-planning-room.md .harness/.gitignore .harness/README.md .harness/workflow-policy.json .harness/state.json .harness/workflow.json .harness/proposal .harness/authority .ai/interview .pi/dpaa .pi/sbadr .pi/pyproject.toml .pi/setup_corenlp.sh .pi/setup_corenlp.ps1 ;;
+      printf '%s\n' .claude/settings.json .claude/hooks/workflow-gate.cjs .claude/commands/workflow .claude/commands/feature-interview.md .claude/commands/feature-planning-room.md .claude/commands/requirements-room.md .harness/.gitignore .harness/README.md .harness/workflow-policy.json .harness/state.json .harness/workflow.json .harness/proposal .harness/authority .ai/interview .pi/dpaa .pi/sbadr .pi/pyproject.toml .pi/setup_corenlp.sh .pi/setup_corenlp.ps1 ;;
     *) echo "Unknown component: $component" >&2; exit 2 ;;
   esac
 }
@@ -134,7 +134,7 @@ component_selected_with() {
       esac ;;
     claude-workflow)
       case "$rel" in
-        .claude/settings.json|.claude/hooks/workflow-gate.cjs|.claude/commands/workflow/*|.claude/commands/feature-interview.md|.claude/commands/feature-planning-room.md|.harness/.gitignore|.harness/README.md|.harness/workflow-policy.json|.harness/state.json|.harness/workflow.json|.harness/proposal/*|.harness/authority/*|.ai/interview/*|.pi/dpaa/*|.pi/sbadr/*|.pi/pyproject.toml|.pi/setup_corenlp.sh|.pi/setup_corenlp.ps1) return 0 ;;
+        .claude/settings.json|.claude/hooks/workflow-gate.cjs|.claude/commands/workflow/*|.claude/commands/feature-interview.md|.claude/commands/feature-planning-room.md|.claude/commands/requirements-room.md|.harness/.gitignore|.harness/README.md|.harness/workflow-policy.json|.harness/state.json|.harness/workflow.json|.harness/proposal/*|.harness/authority/*|.ai/interview/*|.pi/dpaa/*|.pi/sbadr/*|.pi/pyproject.toml|.pi/setup_corenlp.sh|.pi/setup_corenlp.ps1) return 0 ;;
       esac ;;
     *) echo "Unknown component: $component" >&2; exit 2 ;;
   esac

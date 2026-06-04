@@ -60,6 +60,7 @@ COMPONENT_PATHS = {
         ".claude/commands/workflow",
         ".claude/commands/feature-interview.md",
         ".claude/commands/feature-planning-room.md",
+        ".claude/commands/requirements-room.md",
         ".harness/.gitignore",
         ".harness/README.md",
         ".harness/workflow-policy.json",
