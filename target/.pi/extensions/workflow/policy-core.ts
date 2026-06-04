@@ -230,6 +230,83 @@ export function getPhaseAllowedTools(phase: WorkflowPhase, extensionToolNames: s
   return [...new Set([...builtins, ...extensionToolNames])];
 }
 
+// ─── Phase-based write path policy ─────────────────────────────────────────────────
+
+/**
+ * Phase-based write path policy.
+ * mode "deny"  — block writes to files matching any of the glob patterns.
+ * mode "allow" — block writes to files that do NOT match any pattern.
+ * null          — no restriction.
+ *
+ * Override per-phase via HARNESS_WRITE_PATH_POLICY env var (JSON):
+ *   # Deny only src/ in document phase
+ *   HARNESS_WRITE_PATH_POLICY='{"document":{"mode":"deny","patterns":["src/**"]}}'
+ *   # Allow only docs/ in document phase
+ *   HARNESS_WRITE_PATH_POLICY='{"document":{"mode":"allow","patterns":["docs/**","*.md"]}}'
+ *   # Remove all restrictions
+ *   HARNESS_WRITE_PATH_POLICY='{"document":null}'
+ */
+export type WritePathPolicy = { mode: "allow" | "deny"; patterns: readonly string[] };
+
+/** Common source-code extensions — blocked during document phase by default. */
+const SOURCE_CODE_GLOBS: readonly string[] = [
+  "**/*.java", "**/*.kt", "**/*.groovy", "**/*.scala",
+  "**/*.js", "**/*.jsx", "**/*.ts", "**/*.tsx", "**/*.mjs", "**/*.cjs",
+  "**/*.py", "**/*.pyx", "**/*.rb",
+  "**/*.go", "**/*.rs",
+  "**/*.c", "**/*.cpp", "**/*.cc", "**/*.h", "**/*.hpp",
+  "**/*.cs", "**/*.swift", "**/*.php", "**/*.fs", "**/*.clj",
+];
+
+const DEFAULT_PHASE_WRITE_PATH_POLICY: Partial<Record<WorkflowPhase, WritePathPolicy>> = {
+  // During document phase: writing source code is almost certainly a mistake.
+  // Docs, markdown, HTML, config-for-docs, and .ai artifacts are all fine.
+  document: { mode: "deny", patterns: SOURCE_CODE_GLOBS },
+};
+
+/**
+ * Returns the write-path policy for the given phase, or null if unrestricted.
+ * Reads HARNESS_WRITE_PATH_POLICY env var for per-phase overrides.
+ */
+export function getPhaseWritePathPolicy(phase: WorkflowPhase): WritePathPolicy | null {
+  try {
+    const env = process.env.HARNESS_WRITE_PATH_POLICY?.trim();
+    if (env) {
+      const overrides = JSON.parse(env) as Partial<Record<WorkflowPhase, WritePathPolicy | null>>;
+      if (Object.prototype.hasOwnProperty.call(overrides, phase)) {
+        const raw = overrides[phase];
+        if (!raw) return null; // explicit null = no restriction
+        if (raw.mode && Array.isArray(raw.patterns) && raw.patterns.length > 0) return raw as WritePathPolicy;
+      }
+    }
+  } catch { /* ignore malformed env var */ }
+  return DEFAULT_PHASE_WRITE_PATH_POLICY[phase] ?? null;
+}
+
+/**
+ * Returns true if the given relative path matches at least one glob pattern.
+ * Supports * (single-segment wildcard) and ** (multi-segment wildcard).
+ */
+export function matchesWriteGlob(relPath: string, patterns: readonly string[]): boolean {
+  const normalized = relPath.replace(/\\/g, "/").replace(/^\.\//, "");
+  return patterns.some((pattern) => {
+    const reStr = pattern
+      .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+      .replace(/\*\*/g, "\u00a7DOUBLE\u00a7")
+      .replace(/\*/g, "[^/]*")
+      .replace(/\u00a7DOUBLE\u00a7/g, ".*");
+    return new RegExp(`^${reStr}$`).test(normalized);
+  });
+}
+
+/**
+ * Returns true if writing to relPath is blocked by the given policy.
+ */
+export function isWritePathBlocked(relPath: string, policy: WritePathPolicy): boolean {
+  const matches = matchesWriteGlob(relPath, policy.patterns);
+  return policy.mode === "deny" ? matches : !matches;
+}
+
 export function sharedSubagentHandoffContract(): string[] {
   return loadSharedWorkflowPolicy().subagentHandoffContract;
 }

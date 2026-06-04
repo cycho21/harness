@@ -117,6 +117,8 @@ export default function (pi: ExtensionAPI) {
     codeQualityGuardSatisfiedToken: null as { workflowId: string; issuedAt: number; reason: string } | null,
     pushExecutionGuardSatisfiedToken: null as { workflowId: string; issuedAt: number; reason: string } | null,
     policyApprovals: [] as Array<{ timestamp: number; totalChanged: number; categories: string[]; signature: string }>,
+    extensionMutationTurnApproved: false,
+    autoCheckpointForSession: false,
     gateFailures: new Map<string, number>(),
     lastInputCheckpointSignature: null as string | null,
     recentVerificationCommands: [] as Array<{ command: string; timestamp: number; phase?: string }>,
@@ -401,22 +403,25 @@ export default function (pi: ExtensionAPI) {
 
   async function ensureExtensionMutationApproved(toolName: string, input: unknown, ctx: any): Promise<{ ok: true } | { ok: false; reason: string }> {
     if (!requiresExtensionMutationApproval(toolName, input)) return { ok: true };
+    if (state.extensionMutationTurnApproved) return { ok: true };
     const reason = formatExtensionMutationApprovalReason(toolName, input);
     if (!ctx.hasUI) {
       return { ok: false, reason: [reason, "", "대화형 사용자 승인이 필요하지만 현재 UI를 사용할 수 없어 extension 수정을 차단했습니다."].join("\n") };
     }
-    const approved = await ctx.ui.confirm(
-      "Harness extension 수정 승인 확인",
+    const choice = await ctx.ui.select(
+      [reason, "", "위 harness extension 파일 수정을 어떻게 처리하시겠습니까?"].join("\n"),
       [
-        reason,
-        "",
-        "위 harness extension 파일 수정을 진행하시겠습니까?",
-        "",
-        "예: 이번 tool call에 한해 extension 수정을 허용합니다.",
-        "아니오: extension 수정을 차단합니다.",
-      ].join("\n"),
+        "예 — 이번만 허용",
+        "예 — 이번 턴 동안 모두 허용",
+        "아니오",
+      ],
     );
-    return approved ? { ok: true } : { ok: false, reason: "Harness extension modification blocked: user did not approve this tool call." };
+    if (choice === "예 — 이번 턴 동안 모두 허용") {
+      state.extensionMutationTurnApproved = true;
+      return { ok: true };
+    }
+    if (choice === "예 — 이번만 허용") return { ok: true };
+    return { ok: false, reason: "Harness extension modification blocked: user did not approve this tool call." };
   }
 
   function pushPolicySignature(policyScan: ReturnType<typeof scanPushPolicy>): string {
@@ -731,11 +736,21 @@ Risk level: ${spec.riskLevel}`,
       }
       const edits = params.edits as ProposedEdit[];
       const validationErrors: string[] = [];
+      const pathPolicy = phase ? getPhaseWritePathPolicy(phase) : null;
       for (const edit of edits) {
         const r = validateEditPath(edit.path, gitRoot, false);
         if (!r.ok) validationErrors.push((r as { ok: false; reason: string }).reason);
         if (!["write", "edit", "delete"].includes(edit.operation)) {
           validationErrors.push(`Invalid operation "${edit.operation}" for "${edit.path}".`);
+        }
+        if (pathPolicy && edit.operation !== "delete") {
+          const relPath = path.relative(gitRoot, path.resolve(gitRoot, edit.path)).replace(/\\/g, "/");
+          if (isWritePathBlocked(relPath, pathPolicy)) {
+            const hint = pathPolicy.mode === "deny"
+              ? `Denied pattern: ${pathPolicy.patterns.find((p) => matchesWriteGlob(relPath, [p])) ?? "(matched)"}. 소스 코드는 ${phase} 페이즈에서 수정하지 마세요.`
+              : `허용된 경로: ${pathPolicy.patterns.join(", ")}.`;
+            validationErrors.push(`Phase path policy: "${edit.path}" is blocked in ${phase} phase. ${hint}`);
+          }
         }
       }
       if (validationErrors.length > 0) {
@@ -1049,6 +1064,28 @@ Risk level: ${spec.riskLevel}`,
         // Gap fix: name the session so /resume shows the workflow title
         try { pi.setSessionName(`[wf] ${state.workflow.title}`); } catch { /* non-fatal */ }
         ctx.ui.notify(formatWorkflowStatus(state.workflow), "info");
+        // Kick off LLM interview automatically
+        try {
+          const wf = state.workflow;
+          const marker = workflowContinuationMarker(wf);
+          state.workflowContinuationPending = { workflowId: wf.id, phase: wf.phase, marker };
+          const prompt = [
+            `Workflow '${wf.title}'이(가) 시작되었습니다. 현재 페이즈: interview.`,
+            "",
+            formatWorkflowAction(wf),
+            "",
+            "Rules:",
+            "- Begin the interview now: ask targeted questions to clarify requirements and remove ambiguities.",
+            "- Do not advance to plan until requirements are sufficiently understood.",
+            "- Do not request user approval to start — the user already approved by running /workflow start.",
+            "",
+            workflowContinuationMarkerComment(marker),
+          ].join("\n");
+          await (pi as any).sendUserMessage(prompt);
+        } catch (error) {
+          state.workflowContinuationPending = null;
+          ctx.ui.notify(`Workflow interview kick-off failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
+        }
         return;
       }
 
@@ -1459,10 +1496,26 @@ Risk level: ${spec.riskLevel}`,
     if (!state.workflow || state.workflow.phase === "done") return { action: "continue" };
 
     if (shouldOfferInputCheckpoint(state.workflow, event.text, state.lastInputCheckpointSignature)) {
-      const ok = ctx.hasUI
-        ? await ctx.ui.confirm("Workspace checkpoint", "The git workspace has uncommitted changes. Create a checkpoint before handling this request?")
-        : false;
-      if (ok) {
+      let shouldCheckpoint = false;
+      if (state.autoCheckpointForSession) {
+        shouldCheckpoint = true;
+      } else if (ctx.hasUI) {
+        const choice = await ctx.ui.select(
+          "Git workspace에 커밋되지 않은 변경이 있습니다. 이 요청 처리 전에 checkpoint를 생성하시겠습니까?",
+          [
+            "예 — 이번만 생성",
+            "예 — 이번 세션 동안 항상 자동 생성",
+            "아니오",
+          ],
+        );
+        if (choice === "예 — 이번 세션 동안 항상 자동 생성") {
+          state.autoCheckpointForSession = true;
+          shouldCheckpoint = true;
+        } else if (choice === "예 — 이번만 생성") {
+          shouldCheckpoint = true;
+        }
+      }
+      if (shouldCheckpoint) {
         createWorkspaceCheckpoint(state.workflow, `before-input-${shortInputReason(event.text)}`);
         state.lastInputCheckpointSignature = getWorkspaceStatusSignature(state.workflow.gitRoot);
       }
@@ -1569,6 +1622,31 @@ Risk level: ${spec.riskLevel}`,
               : "Use workflow_propose_edit for guarded file changes in this phase.",
           ].join("\n"),
         };
+      }
+
+      // Phase write-path policy: restrict which paths may be written per phase
+      const pathPolicy = getPhaseWritePathPolicy(state.workflow.phase);
+      if (pathPolicy) {
+        const filePath = String((event.input as any).path ?? "");
+        if (filePath) {
+          const gitRoot = state.workflow.gitRoot ?? getGitRoot();
+          const relPath = gitRoot
+            ? path.relative(gitRoot, path.resolve(gitRoot, filePath)).replace(/\\/g, "/")
+            : filePath.replace(/\\/g, "/");
+          if (isWritePathBlocked(relPath, pathPolicy)) {
+            const hint = pathPolicy.mode === "deny"
+              ? `소스 코드 파일은 ${state.workflow.phase} 페이즈에서 수정할 수 없습니다. 문서 첑(마크다운, HTML, 샘플 등)에 대한 변경만 허용됩니다.`
+              : `허용된 경로: ${pathPolicy.patterns.join(", ")}.`;
+            return {
+              block: true,
+              reason: [
+                `⚠️ Phase path policy blocked: ${event.toolName} to "${filePath}" is not allowed in ${state.workflow.phase} phase.`,
+                hint,
+                `HARNESS_WRITE_PATH_POLICY 환경 변수로 정책 오버라이드 가능.`,
+              ].join("\n"),
+            };
+          }
+        }
       }
     }
 
@@ -1697,16 +1775,12 @@ Risk level: ${spec.riskLevel}`,
       const policySignature = pushPolicySignature(policyScan);
       const policyAlreadyApproved = state.policyApprovals.at(-1)?.signature === policySignature;
       if (!policyScan.ok && !policyAlreadyApproved) {
-        const GATE_SKIP_THRESHOLD = 3;
-        const failures = (state.gateFailures.get("policy-scan") ?? 0) + 1;
-        state.gateFailures.set("policy-scan", failures);
-
         writeFieldLogEvent({
           type: "policy.blocked",
           category: "push-policy",
           severity: "blocker",
           workflow: state.workflow,
-          summary: `Push policy scan blocked git push (attempt ${failures}/${GATE_SKIP_THRESHOLD}).`,
+          summary: "Push policy scan blocked git push.",
           expected: "Risky push requires policy review or explicit one-use exception.",
           actual: `Policy findings: ${policyScan.findings.map((finding) => finding.category).join(", ")}`,
           impact: "Push is blocked until changes are reviewed or user approves skip.",
@@ -1716,16 +1790,16 @@ Risk level: ${spec.riskLevel}`,
           improvementKind: "workflow-rule",
         });
 
-        if (ctx.hasUI && failures >= GATE_SKIP_THRESHOLD) {
+        if (ctx.hasUI) {
           const approved = await ctx.ui.confirm(
             "Push policy scan 승인 확인",
             [
               formatPushPolicyScanBlocked(policyScan),
               "",
-              `Policy scan이 ${failures}회 연속 차단했습니다. 위험 변경 사항을 검토하고 계속 진행하시겠습니까?`,
+              "위험 변경 사항을 확인했으며 git push를 계속 진행하시겠습니까?",
               "",
-              "예: 현재 git push를 계속 진행합니다.",
-              "아니오: git push를 차단합니다.",
+              "예: 현재 workspace 상태를 승인하고 push합니다.",
+              "아니오: push를 차단합니다. 변경 사항을 검토하거나 `/workflow skip policy-scan <사유>`로 예외 처리하세요.",
             ].join("\n"),
           );
           if (approved) {
@@ -1741,12 +1815,14 @@ Risk level: ${spec.riskLevel}`,
           }
         }
 
-        const retryNote = failures < GATE_SKIP_THRESHOLD
-          ? `Attempt ${failures}/${GATE_SKIP_THRESHOLD}: Review and reduce the flagged changes, then retry git push.`
-          : `Attempt ${failures}/${GATE_SKIP_THRESHOLD}: User was asked but did not approve. Resolve the flagged changes or ask the user to run \`/workflow skip policy-scan <reason>\`.`;
         return {
           block: true,
-          reason: [formatPushPolicyScanBlocked(policyScan), "", retryNote].join("\n"),
+          reason: [
+            formatPushPolicyScanBlocked(policyScan),
+            "",
+            "위험 변경 사항을 검토하고 줄인 뒤 git push를 재시도하세요.",
+            "또는 `/workflow skip policy-scan <사유>`로 명시 예외 처리하세요.",
+          ].join("\n"),
         };
       }
     }
@@ -1847,6 +1923,10 @@ Risk level: ${spec.riskLevel}`,
   //
   // System-prompt injection makes these constraints part of the model's rules,
   // instead of presenting them only as tool rejection messages to work around.
+  pi.on("turn_start", async () => {
+    state.extensionMutationTurnApproved = false;
+  });
+
   pi.on("before_agent_start", async (event) => {
     markWorkflowContinuationDelivered((event as any).prompt);
 

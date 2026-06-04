@@ -11,6 +11,156 @@ const HARNESS_ROOT = path.resolve(__dirname, "../../..");
 const PI_ROOT = path.join(HARNESS_ROOT, ".pi");
 const WORKFLOW_DIR = path.join(PI_ROOT, "workflows");
 
+// ─── Build system detection ──────────────────────────────────────────────────
+
+export type BuildSystemType =
+  | "gradle" | "maven"
+  | "npm" | "yarn" | "pnpm" | "bun"
+  | "poetry" | "pip"
+  | "go"
+  | "cargo"
+  | "make"
+  | "unknown";
+
+export type BuildSystemInfo = {
+  type: BuildSystemType;
+  testCommand: { executable: string; args: string[] } | null;
+  buildCommand: { executable: string; args: string[] } | null;
+  qualityCommand: { executable: string; args: string[] } | null;
+};
+
+function hasMakeTarget(makeRoot: string, target: string): boolean {
+  for (const name of ["Makefile", "makefile", "GNUmakefile"]) {
+    const full = path.join(makeRoot, name);
+    if (!fs.existsSync(full)) continue;
+    try {
+      if (new RegExp(`^${target}\\s*:`, "m").test(fs.readFileSync(full, "utf-8"))) return true;
+    } catch { /* ignore */ }
+  }
+  return false;
+}
+
+export function detectBuildSystem(root: string): BuildSystemInfo {
+  const exists = (f: string) => fs.existsSync(path.join(root, f));
+
+  // Gradle (Java/Kotlin)
+  if (exists("gradlew") || exists("gradlew.bat") || exists("build.gradle") || exists("build.gradle.kts")) {
+    const gradleBin =
+      process.platform === "win32" && exists("gradlew.bat") ? path.join(root, "gradlew.bat")
+      : exists("gradlew") ? path.join(root, "gradlew")
+      : "gradle";
+    let hasQualityGuard = false;
+    for (const f of ["build.gradle", "build.gradle.kts"]) {
+      try {
+        if (exists(f) && fs.readFileSync(path.join(root, f), "utf-8").includes("codeQualityGuard")) {
+          hasQualityGuard = true;
+          break;
+        }
+      } catch { /* ignore */ }
+    }
+    return {
+      type: "gradle",
+      testCommand: { executable: gradleBin, args: ["test"] },
+      buildCommand: { executable: gradleBin, args: ["build", "-x", "test"] },
+      qualityCommand: hasQualityGuard ? { executable: gradleBin, args: ["codeQualityGuard"] } : null,
+    };
+  }
+
+  // Maven
+  if (exists("pom.xml")) {
+    const mvnBin =
+      process.platform === "win32" && exists("mvnw.cmd") ? path.join(root, "mvnw.cmd")
+      : exists("mvnw") ? path.join(root, "mvnw")
+      : "mvn";
+    return {
+      type: "maven",
+      testCommand: { executable: mvnBin, args: ["test"] },
+      buildCommand: { executable: mvnBin, args: ["package", "-DskipTests"] },
+      qualityCommand: { executable: mvnBin, args: ["verify", "-DskipTests"] },
+    };
+  }
+
+  // Node.js — detect package manager
+  if (exists("package.json")) {
+    let pm: BuildSystemType = "npm";
+    let pmBin = "npm";
+    if (exists("bun.lockb") || exists("bun.lock")) { pm = "bun"; pmBin = "bun"; }
+    else if (exists("pnpm-lock.yaml")) { pm = "pnpm"; pmBin = "pnpm"; }
+    else if (exists("yarn.lock")) { pm = "yarn"; pmBin = "yarn"; }
+    let hasLint = false;
+    let hasTest = false;
+    let hasBuild = false;
+    try {
+      const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf-8")) as { scripts?: Record<string, string> };
+      hasLint = !!pkg.scripts?.lint;
+      hasTest = !!pkg.scripts?.test;
+      hasBuild = !!pkg.scripts?.build;
+    } catch { /* ignore */ }
+    return {
+      type: pm,
+      testCommand: hasTest ? { executable: pmBin, args: ["run", "test"] } : null,
+      buildCommand: hasBuild ? { executable: pmBin, args: ["run", "build"] } : null,
+      qualityCommand: hasLint ? { executable: pmBin, args: ["run", "lint"] } : null,
+    };
+  }
+
+  // Python (Poetry — check before generic pip)
+  if (exists("poetry.lock") || (exists("pyproject.toml") && (() => {
+    try { return fs.readFileSync(path.join(root, "pyproject.toml"), "utf-8").includes("[tool.poetry]"); } catch { return false; }
+  })())) {
+    return {
+      type: "poetry",
+      testCommand: { executable: "poetry", args: ["run", "pytest"] },
+      buildCommand: { executable: "poetry", args: ["build"] },
+      qualityCommand: null,
+    };
+  }
+
+  // Python (pip/setuptools/pyproject)
+  if (exists("pyproject.toml") || exists("setup.py") || exists("setup.cfg") || exists("requirements.txt")) {
+    return {
+      type: "pip",
+      testCommand: { executable: "pytest", args: [] },
+      buildCommand: null,
+      qualityCommand: null,
+    };
+  }
+
+  // Go
+  if (exists("go.mod")) {
+    return {
+      type: "go",
+      testCommand: { executable: "go", args: ["test", "./..."] },
+      buildCommand: { executable: "go", args: ["build", "./..."] },
+      qualityCommand: { executable: "go", args: ["vet", "./..."] },
+    };
+  }
+
+  // Rust
+  if (exists("Cargo.toml")) {
+    return {
+      type: "cargo",
+      testCommand: { executable: "cargo", args: ["test"] },
+      buildCommand: { executable: "cargo", args: ["build"] },
+      qualityCommand: { executable: "cargo", args: ["clippy", "--", "-D", "warnings"] },
+    };
+  }
+
+  // Make (generic fallback)
+  if (exists("Makefile") || exists("makefile") || exists("GNUmakefile")) {
+    return {
+      type: "make",
+      testCommand: hasMakeTarget(root, "test") ? { executable: "make", args: ["test"] } : null,
+      buildCommand: hasMakeTarget(root, "build") ? { executable: "make", args: ["build"] } : null,
+      qualityCommand: hasMakeTarget(root, "lint") ? { executable: "make", args: ["lint"] } : null,
+    };
+  }
+
+  return { type: "unknown", testCommand: null, buildCommand: null, qualityCommand: null };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export type WorkflowPrerequisiteScan = {
   ok: boolean;
   root: string;
@@ -20,7 +170,6 @@ export type WorkflowPrerequisiteScan = {
 
 export function scanWorkflowPrerequisites(root: string = HARNESS_ROOT): WorkflowPrerequisiteScan {
   const exists = (relativePath: string) => fs.existsSync(path.join(root, relativePath));
-  const anyExists = (relativePaths: string[]) => relativePaths.some(exists);
 
   const required = [
     ".pi/WORKFLOW.md",
@@ -36,24 +185,25 @@ export function scanWorkflowPrerequisites(root: string = HARNESS_ROOT): Workflow
   const missingRequired = required.filter((item) => !exists(item));
 
   const projectRoot = getGitRoot() ?? root;
-  const projectExists = (relativePath: string) => fs.existsSync(path.join(projectRoot, relativePath));
-  const projectAnyExists = (relativePaths: string[]) => relativePaths.some(projectExists);
   const warnings: string[] = [];
 
-  if (!projectAnyExists(["build.gradle", "build.gradle.kts", "pom.xml"])) {
-    warnings.push("build.gradle/build.gradle.kts/pom.xml not found; code quality guard may not be runnable.");
+  const bs = detectBuildSystem(projectRoot);
+
+  if (bs.type === "unknown" && !process.env.HARNESS_CODE_QUALITY_GUARD_CMD) {
+    warnings.push("No recognized build system found. Set HARNESS_CODE_QUALITY_GUARD_CMD to enable the code quality gate.");
   }
-  if (!projectAnyExists(["config/checkstyle/checkstyle.xml", "checkstyle.xml", "config/checkstyle/sun_checks.xml", "config/checkstyle/google_checks.xml"])) {
-    warnings.push("Checkstyle config not found; Checkstyle guard may be incomplete.");
-  }
-  if (projectAnyExists(["build.gradle", "build.gradle.kts"])) {
-    const buildFiles = ["build.gradle", "build.gradle.kts"]
-      .map((file) => path.join(projectRoot, file))
-      .filter((file) => fs.existsSync(file));
-    const mentionsGuard = buildFiles.some((file) => fs.readFileSync(file, "utf-8").includes("codeQualityGuard"));
-    if (!mentionsGuard && !process.env.HARNESS_CODE_QUALITY_GUARD_CMD) {
+
+  if (bs.type === "gradle") {
+    const projectAnyExists = (relativePaths: string[]) =>
+      relativePaths.some((p) => fs.existsSync(path.join(projectRoot, p)));
+    if (!projectAnyExists(["config/checkstyle/checkstyle.xml", "checkstyle.xml", "config/checkstyle/sun_checks.xml", "config/checkstyle/google_checks.xml"])) {
+      warnings.push("Checkstyle config not found; Checkstyle guard may be incomplete.");
+    }
+    if (!bs.qualityCommand && !process.env.HARNESS_CODE_QUALITY_GUARD_CMD) {
       warnings.push("Gradle codeQualityGuard task not found; add it to build.gradle or set HARNESS_CODE_QUALITY_GUARD_CMD.");
     }
+  } else if (bs.type !== "unknown" && bs.qualityCommand === null && !process.env.HARNESS_CODE_QUALITY_GUARD_CMD) {
+    warnings.push(`No code quality gate detected for ${bs.type} project. Set HARNESS_CODE_QUALITY_GUARD_CMD to enable.`);
   }
 
   return { ok: missingRequired.length === 0, root, missingRequired, warnings };
@@ -101,6 +251,13 @@ export function formatHarnessDoctor(): string {
     (f) => f.startsWith("stanford-corenlp-") && f.endsWith(".jar") && !f.includes("javadoc") && !f.includes("sources") && !f.includes("models"),
   );
   const javaOk = commandOk("java -version");
+  const projectRootForDoctor = getGitRoot() ?? HARNESS_ROOT;
+  const bs = detectBuildSystem(projectRootForDoctor);
+  const qualityGateLabel = bs.qualityCommand
+    ? `${bs.qualityCommand.executable} ${bs.qualityCommand.args.join(" ")}`
+    : process.env.HARNESS_CODE_QUALITY_GUARD_CMD
+      ? "env:HARNESS_CODE_QUALITY_GUARD_CMD"
+      : "NOT CONFIGURED (set HARNESS_CODE_QUALITY_GUARD_CMD)";
   const checks = [
     ["runtime files", scan.ok ? "OK" : "FAIL"],
     ["git", commandOk("git --version") ? "OK" : "FAIL"],
@@ -113,6 +270,8 @@ export function formatHarnessDoctor(): string {
     ["java >= 17", javaOk ? "OK" : "MISSING (required for SBADR/CoreNLP)"],
     ["CoreNLP", coreNlpInstalled ? "OK" : `MISSING (auto-installed on first DPAA gate; run ${process.platform === "win32" ? ".pi/setup_corenlp.ps1" : ".pi/setup_corenlp.sh"} to install manually)`],
     ["setup_corenlp", fs.existsSync(path.join(PI_ROOT, process.platform === "win32" ? "setup_corenlp.ps1" : "setup_corenlp.sh")) ? "OK" : "MISSING"],
+    ["project build system", bs.type],
+    ["code quality gate", qualityGateLabel],
     ["project AGENTS.md", fs.existsSync(path.join(HARNESS_ROOT, "AGENTS.md")) ? "OK" : "FAIL"],
   ];
 
@@ -210,9 +369,9 @@ export const COMMAND_CATALOG: readonly CommandSpec[] = [
   },
   {
     id: "code-quality",
-    description: "Run Checkstyle/PMD/tests via codeQualityGuard",
-    executable: "auto",
-    fixedArgs: ["codeQualityGuard"],
+    description: "Run code quality checks (lint/checkstyle/vet/clippy) for the detected build system",
+    executable: "auto-quality",
+    fixedArgs: [],
     allowedPhases: ["implement", "code_review"],
     cwdPolicy: "git-root",
     timeoutMs: 300_000,
@@ -223,9 +382,9 @@ export const COMMAND_CATALOG: readonly CommandSpec[] = [
   },
   {
     id: "project-test",
-    description: "Run project tests",
-    executable: "auto",
-    fixedArgs: ["test"],
+    description: "Run project tests for the detected build system",
+    executable: "auto-test",
+    fixedArgs: [],
     allowedPhases: ["implement", "code_review"],
     cwdPolicy: "git-root",
     timeoutMs: 300_000,
@@ -236,9 +395,9 @@ export const COMMAND_CATALOG: readonly CommandSpec[] = [
   },
   {
     id: "project-build",
-    description: "Build the project (compile only, skip tests)",
-    executable: "auto",
-    fixedArgs: ["build", "-x", "test"],
+    description: "Build the project (skip tests) for the detected build system",
+    executable: "auto-build",
+    fixedArgs: [],
     allowedPhases: ["implement", "code_review"],
     cwdPolicy: "git-root",
     timeoutMs: 300_000,
@@ -294,7 +453,27 @@ export function runCatalogCommand(
   let executable = spec.executable;
   let args = [...spec.fixedArgs];
 
-  // Resolve "auto" executable based on project type
+  // Resolve build-system-aware sentinels (auto-test / auto-build / auto-quality)
+  if (executable === "auto-test" || executable === "auto-build" || executable === "auto-quality") {
+    const bs = detectBuildSystem(cwd);
+    const action = executable.slice(5) as "test" | "build" | "quality";
+    const cmd = action === "test" ? bs.testCommand : action === "build" ? bs.buildCommand : bs.qualityCommand;
+    if (!cmd) {
+      return {
+        ok: false,
+        commandId: spec.id,
+        exitCode: null,
+        output: `No ${action} command detected for ${bs.type} project. Set HARNESS_CODE_QUALITY_GUARD_CMD or add a recognized build system file.`,
+        truncated: false,
+        cwd,
+        elapsedMs: Date.now() - startMs,
+      };
+    }
+    executable = cmd.executable;
+    args = [...cmd.args, ...args];
+  }
+
+  // Resolve legacy "auto" executable based on project type (backward compatibility)
   if (executable === "auto") {
     const resolved = resolveAutoExecutable(gitRoot);
     executable = resolved.executable;

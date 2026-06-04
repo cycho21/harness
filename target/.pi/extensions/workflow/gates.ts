@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { WorkflowInstance, WorkflowPhase, DpaaReport, DpaaRunReceipt } from "./types";
 import { createArtifactSnapshot, escapeForDoubleQuotedArg, findPlanForDpaa, updateSnapshotWithDpaa, writeDpaaReceipt } from "./artifacts";
+import { detectBuildSystem } from "./catalog";
 import { getBranch, getGitRoot } from "./git";
 import { sha256File } from "./storage";
 import { banner, table } from "./ui";
@@ -235,19 +236,20 @@ export function runCodeQualityGate(workflow: WorkflowInstance): { ok: boolean; m
   }
 
   const configured = process.env.HARNESS_CODE_QUALITY_GUARD_CMD?.trim();
-  const hasGradle = fs.existsSync(path.join(root, "gradlew")) || fs.existsSync(path.join(root, "gradlew.bat")) || fs.existsSync(path.join(root, "build.gradle")) || fs.existsSync(path.join(root, "build.gradle.kts"));
-  if (!configured && !hasGradle) {
-    return { ok: true, message: "Code quality guard skipped: no Gradle project detected" };
+  const buildSystem = detectBuildSystem(root);
+
+  if (!configured && buildSystem.type === "unknown") {
+    return { ok: true, message: "Code quality guard skipped: no recognized build system detected. Set HARNESS_CODE_QUALITY_GUARD_CMD to enable." };
   }
 
-  // Resolve command — prefer execFileSync for Gradle to avoid shell interpolation
-  // For HARNESS_CODE_QUALITY_GUARD_CMD we keep execSync since it may contain shell syntax
-  const command = configured || (process.platform === "win32" && fs.existsSync(path.join(root, "gradlew.bat"))
-    ? `${path.join(root, "gradlew.bat")} codeQualityGuard`
-    : `${path.join(root, "gradlew")} codeQualityGuard`);
-  const gradleBin = configured ? null : (process.platform === "win32" && fs.existsSync(path.join(root, "gradlew.bat"))
-    ? path.join(root, "gradlew.bat")
-    : path.join(root, "gradlew"));
+  if (!configured && buildSystem.qualityCommand === null) {
+    return { ok: true, message: `Code quality guard skipped: no quality gate configured for ${buildSystem.type} project. Set HARNESS_CODE_QUALITY_GUARD_CMD to enable.` };
+  }
+
+  // Resolve display label for messages
+  const qc = buildSystem.qualityCommand;
+  const command = configured ?? `${qc!.executable} ${qc!.args.join(" ")}`;
+
   try {
     if (configured) {
       // Developer-controlled env var: allow shell syntax (execSync)
@@ -259,8 +261,8 @@ export function runCodeQualityGate(workflow: WorkflowInstance): { ok: boolean; m
         maxBuffer: 1024 * 1024 * 10,
       });
     } else {
-      // Gradle wrapper: use execFileSync (structured argv, no shell interpolation)
-      execFileSync(gradleBin!, ["codeQualityGuard"], {
+      // Build system quality command: use execFileSync (structured argv, no shell interpolation)
+      execFileSync(qc!.executable, qc!.args, {
         cwd: root,
         encoding: "utf-8",
         env: { ...process.env, PYTHONIOENCODING: "utf-8" },
@@ -279,7 +281,7 @@ export function runCodeQualityGate(workflow: WorkflowInstance): { ok: boolean; m
       severity: "blocker",
       workflow,
       summary: "Code quality guard failed before review approval.",
-      expected: "codeQualityGuard exits successfully before code_review → review_approved.",
+      expected: "Code quality guard exits successfully before code_review → review_approved.",
       actual: `Command failed: ${command}. Exit: ${err.status ?? "unknown"}`,
       impact: "Workflow cannot advance to review_approved until quality failures are fixed or explicitly skipped.",
       primaryMessage: output || `Command failed: ${command}`,
@@ -293,11 +295,11 @@ export function runCodeQualityGate(workflow: WorkflowInstance): { ok: boolean; m
       message: [
         formatGateBlocked({
           gate: "Code Quality",
-          why: `Mechanical code quality guard failed before code_review → review_approved. Command: ${command}. Exit: ${err.status ?? "unknown"}`,
+          why: `Code quality guard failed before code_review → review_approved. Command: ${command}. Exit: ${err.status ?? "unknown"}`,
           next: [
-            "Fix Checkstyle/PMD/test failures reported by the guard",
+            "Fix the quality failures reported by the guard",
             "Re-run /workflow approve after fixes",
-            "If the project has no codeQualityGuard task, add it to build.gradle or set HARNESS_CODE_QUALITY_GUARD_CMD",
+            `Detected build system: ${buildSystem.type}. If no quality gate is configured, set HARNESS_CODE_QUALITY_GUARD_CMD`,
           ],
           skip: "/workflow skip code-quality <reason>",
         }),
