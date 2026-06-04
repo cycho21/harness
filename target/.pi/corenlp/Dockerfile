@@ -1,15 +1,18 @@
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:17-jre
 WORKDIR /corenlp
 
 ENV CORENLP_VERSION=4.5.7
 
-RUN apk add --no-cache curl unzip \
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl unzip \
  && curl -L -o corenlp.zip \
       "https://nlp.stanford.edu/software/stanford-corenlp-${CORENLP_VERSION}.zip" \
  && unzip -q corenlp.zip \
  && mv "stanford-corenlp-${CORENLP_VERSION}"/* . \
  && rm -rf "stanford-corenlp-${CORENLP_VERSION}" corenlp.zip \
- && apk del curl unzip
+ && apt-get remove -y curl unzip \
+ && apt-get autoremove -y \
+ && rm -rf /var/lib/apt/lists/*
 
 EXPOSE 9000
 
