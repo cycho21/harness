@@ -24,6 +24,20 @@ Write-Host "Stanford CoreNLP Shared Server"
 Write-Host "  Container : $ContainerName"
 Write-Host "  Port      : $Port"
 
+function Test-LocalPortInUse([int]$PortNumber) {
+    $client = New-Object System.Net.Sockets.TcpClient
+    try {
+        $async = $client.BeginConnect("127.0.0.1", $PortNumber, $null, $null)
+        if (-not $async.AsyncWaitHandle.WaitOne(300, $false)) { return $false }
+        $client.EndConnect($async)
+        return $true
+    } catch {
+        return $false
+    } finally {
+        $client.Close()
+    }
+}
+
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     throw "docker not found. Install Docker Desktop and retry."
 }
@@ -41,6 +55,16 @@ if (-not $imageId) {
 $running = docker ps --filter "name=^${ContainerName}$" --format "{{.Names}}" 2>$null
 if ($running -match "^${ContainerName}$") {
     Write-Host "CoreNLP already running at http://localhost:$Port"
+    exit 0
+}
+
+# If another process already owns the port, do not fail the whole harness install.
+# This commonly happens when another project already started CoreNLP, or when a
+# local service is using 9000. Users can override with CORENLP_PORT=9001.
+if (Test-LocalPortInUse ([int]$Port)) {
+    Write-Warning "Port $Port is already in use. Skipping CoreNLP container creation/start."
+    Write-Host "If this is an existing CoreNLP server, use: CORENLP_URL=http://localhost:$Port"
+    Write-Host "To start a separate container, set CORENLP_PORT to a free port, e.g. 9001."
     exit 0
 }
 

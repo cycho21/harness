@@ -284,7 +284,7 @@ git push 위험 변경 재확인
 .pi/extensions/** 수정
 ```
 
-`/workflow status`, `/workflow start`, `/workflow load`, `/workflow approve`, `/workflow state <phase>` 출력에는 `[LLM WORKFLOW ACTION]` 블록이 포함됩니다. 이 블록은 현재 phase, 다음 phase, 자동 전이/승인 경계 여부, LLM이 지금 해야 할 일을 명시합니다. 자동 전이 구간이 끝나면 pending message가 없을 때 extension이 follow-up continuation prompt를 한 번 큐에 넣어 LLM이 현재 phase 작업을 이어가게 합니다. 이 continuation은 승인 경계를 넘지 않고, stale/중복 marker guard로 보호됩니다. `/workflow state <phase>`는 정상 진행 명령이 아니라 수동 복구 전용입니다. 정상 진행에서 사용자는 `/workflow approve`를 직접 입력하라는 안내를 받지 않고, 승인 경계에서 TUI yes/no 확인창으로 결정합니다. 자동 전이 구간은 사용자 확인 없이 진행됩니다.
+`/workflow status`, `/workflow start`, `/workflow load`, `/workflow approve`, `/workflow state <phase>` 출력에는 `[LLM WORKFLOW ACTION]` 블록이 포함됩니다. 이 블록은 현재 phase, 다음 phase, 자동 전이/승인 경계 여부, LLM이 지금 해야 할 일을 명시합니다. 자동 전이 구간이 끝나면 pending message가 없을 때 extension이 follow-up continuation prompt를 한 번 큐에 넣어 LLM이 현재 phase 작업을 이어가게 합니다. 이 continuation은 승인 경계를 넘지 않고, stale/중복 marker guard로 보호됩니다. `/workflow state <phase>`는 정상 진행 명령이 아니라 수동 복구 전용입니다. 정상 진행에서 사용자는 `/workflow approve`를 직접 입력하라는 안내를 받지 않고, 승인 경계에서 TUI yes/no 확인창으로 결정합니다. 자동 전이 구간은 사용자 확인 없이 진행됩니다. Workflow approval dashboard는 전환 메타데이터를 안전하게 문자열로 정규화해 일부 값이 비어 있어도 `undefined`를 노출하지 않습니다.
 
 `/workflow start <목표>`가 `interview` phase를 시작하면 UI 세션에서는 interview wizard가 자동으로 열립니다. Wizard는 기존 5개 인터뷰 질문을 하나씩 보여주며, 대부분의 질문에서 선택지와 자유입력을 함께 받고 선택 질문은 `모름/건너뛰기`를 허용합니다. 필수 질문은 선택지 또는 자유입력 없이 다음으로 진행할 수 없습니다. Editor 위 progress widget은 현재/완료/남은 질문을 표시하고, footer status는 workflow title, 현재 phase, 다음 phase, 전체 phase progress를 표시합니다. Wizard 중 preview 키로 답변 요약을 볼 수 있으며 마지막 질문 후 같은 요약 preview가 자동 표시됩니다. UI가 없거나 wizard가 취소/실패하면 기존 채팅 기반 interview continuation으로 fallback됩니다.
 

@@ -266,6 +266,14 @@ export default function (pi: ExtensionAPI) {
     return box;
   }
 
+  function formatTransitionDetails(value: unknown): string {
+    if (!Array.isArray(value)) return "advanced";
+    const labels = value
+      .map((item) => typeof item === "string" ? item : null)
+      .filter((item): item is string => Boolean(item && item.trim()));
+    return labels.length > 0 ? labels.join(" → ") : "advanced";
+  }
+
   function refreshStatus(ctx: { hasUI: boolean; ui: { setStatus?: (...args: unknown[]) => void; theme?: unknown } }): void {
     if (!ctx.hasUI || typeof (ctx.ui as any).setStatus !== "function") return;
     try {
@@ -868,7 +876,7 @@ Risk level: ${spec.riskLevel}`,
       if (isPartial) return resultBox(theme, "pending", theme.fg("warning", "Awaiting workflow approval…"));
       const d = result.details as Record<string, unknown>;
       if (d?.ok) {
-        const transitions = Array.isArray(d.transitions) ? d.transitions.join(" → ") : "advanced";
+        const transitions = formatTransitionDetails(d.transitions);
         return resultBox(theme, "success", theme.fg("success", "✅ Workflow advanced ") + theme.fg("dim", transitions));
       }
       const reason = String(d?.reason ?? "blocked");

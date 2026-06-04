@@ -19,6 +19,10 @@ echo "  Container : ${CONTAINER_NAME}"
 echo "  Port      : ${PORT}"
 echo "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
 
+port_in_use() {
+  (echo >"/dev/tcp/127.0.0.1/${PORT}") >/dev/null 2>&1
+}
+
 if ! command -v docker &>/dev/null; then
   echo "Error: docker not found. Install Docker Desktop and retry." >&2
   exit 1
@@ -33,6 +37,16 @@ fi
 # Already running?
 if docker ps --filter "name=^${CONTAINER_NAME}$" --format "{{.Names}}" 2>/dev/null | grep -q "^${CONTAINER_NAME}$"; then
   echo "CoreNLP already running at http://localhost:${PORT}"
+  exit 0
+fi
+
+# If another process already owns the port, do not fail the whole harness install.
+# This commonly happens when another project already started CoreNLP, or when a
+# local service is using 9000. Users can override with CORENLP_PORT=9001.
+if port_in_use; then
+  echo "Warning: port ${PORT} is already in use. Skipping CoreNLP container creation/start." >&2
+  echo "If this is an existing CoreNLP server, use: CORENLP_URL=http://localhost:${PORT}"
+  echo "To start a separate container, set CORENLP_PORT to a free port, e.g. 9001."
   exit 0
 fi
 

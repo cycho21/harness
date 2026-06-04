@@ -128,6 +128,20 @@ def test_powershell_clean_preserve_normalizes_single_backslash_paths():
     assert "$Rel.Replace('\\\\', '/')" not in ps1
 
 
+def test_corenlp_setup_gracefully_skips_when_port_is_already_in_use():
+    ps1 = (ROOT / "target" / ".pi" / "setup_corenlp.ps1").read_text(encoding="utf-8")
+    sh = (ROOT / "target" / ".pi" / "setup_corenlp.sh").read_text(encoding="utf-8")
+
+    assert "Test-LocalPortInUse" in ps1
+    assert "Port $Port is already in use" in ps1
+    assert "Skipping CoreNLP container creation/start" in ps1
+    assert "CORENLP_PORT" in ps1
+    assert "port_in_use" in sh
+    assert "port ${PORT} is already in use" in sh
+    assert "Skipping CoreNLP container creation/start" in sh
+    assert "CORENLP_PORT" in sh
+
+
 def test_install_update_entrypoints_force_utf8_and_do_not_reference_legacy_codepages():
     paths = [
         ROOT / "scripts" / "init-target-harness.ps1",

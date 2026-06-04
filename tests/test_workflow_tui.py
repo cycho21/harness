@@ -91,6 +91,14 @@ def test_workflow_approve_has_colored_render_result():
     assert "colorResultLabel(theme, warning ? \"warning\" : \"error\"" in block
 
 
+def test_workflow_approve_render_result_filters_undefined_transitions():
+    src = WORKFLOW.read_text(encoding="utf-8")
+    block = _tool_block(src, "workflow_approve")
+    assert "function formatTransitionDetails" in src
+    assert "const transitions = formatTransitionDetails(d.transitions);" in block
+    assert "d.transitions.join" not in block
+
+
 def test_workflow_state_has_colored_render_result():
     src = WORKFLOW.read_text(encoding="utf-8")
     block = _tool_block(src, "workflow_state")
@@ -134,7 +142,7 @@ def test_refresh_status_uses_set_status():
 def test_refresh_status_shows_gate_indicators():
     src = WORKFLOW.read_text(encoding="utf-8")
     idx = src.index("function refreshStatus")
-    block = src[idx:idx + 1800]
+    block = src[idx:idx + 2400]
     assert "DPAA" in block or "dpaa" in block
     assert "Quality" in block or "quality" in block
     assert "Review" in block or "review" in block
