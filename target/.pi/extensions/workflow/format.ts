@@ -3,7 +3,7 @@ import { listArtifactSnapshots } from "./artifacts";
 import { validateWorkflowWorkspace, formatWorkspaceMismatch } from "./gates";
 import { getNextPhase } from "./state";
 import { banner, table } from "./ui";
-import { isSharedAutoAdvancePhase, sharedContextStrategy, sharedHardRules, sharedPhaseGuidance, sharedSubagentHandoffContract, PHASE_ALLOWED_BUILTIN_TOOLS } from "./policy-core";
+import { isSharedAutoAdvancePhase, sharedContextStrategy, sharedHardRules, sharedPhaseGuidance, sharedSubagentHandoffContract } from "./policy-core";
 import { getCatalogCommandsForPhase } from "./catalog";
 
 export function formatWorkflowStatus(workflow: WorkflowInstance | null): string {
@@ -282,11 +282,23 @@ export function formatWorkflowBoard(s: WorkflowBoardState): string[] {
   const wf = s.workflow;
   const next = getNextPhase(wf.phase);
 
-  // Gate status indicators
-  const dpaa    = s.dpaaGuardSatisfied       ? "✅ pass" : (s.gateFailures.get("dpaa") ?? 0) > 0         ? "❌ fail" : "⏳ pending";
-  const quality = s.codeQualityGuardSatisfied ? "✅ pass" : (s.gateFailures.get("code-quality") ?? 0) > 0 ? "❌ fail" : "⏳ pending";
-  const review  = s.reviewPackageSubmitted    ? "✅ pass"  : "⏳ pending";
-  const push    = s.pushGuardSatisfied        ? "✅ pass"  : "⏳ pending";
+  // Gate status indicators — only show gates relevant to the current phase
+  const dpaa    = s.dpaaGuardSatisfied       ? "✅" : (s.gateFailures.get("dpaa") ?? 0) > 0         ? "❌" : "⏳";
+  const quality = s.codeQualityGuardSatisfied ? "✅" : (s.gateFailures.get("code-quality") ?? 0) > 0 ? "❌" : "⏳";
+  const review  = s.reviewPackageSubmitted    ? "✅" : "⏳";
+  const push    = s.pushGuardSatisfied        ? "✅" : "⏳";
+
+  type GateEntry = [string, string];
+  const relevantGates: GateEntry[] = (() => {
+    switch (wf.phase) {
+      case "plan_review":                        return [["DPAA", dpaa]];
+      case "implement":                          return [["DPAA", dpaa], ["Quality", quality]];
+      case "code_review":                        return [["Quality", quality], ["Review", review]];
+      case "review_approved": case "document":   return [["Quality", quality], ["Review", review], ["Push", push]];
+      case "commit": case "push":                return [["Quality", quality], ["Review", review], ["Push", push]];
+      default:                                   return [];
+    }
+  })();
 
   // Phase-allowed commands — truncate if too many to fit in 80 chars
   const allCmds = getCatalogCommandsForPhase(wf.phase).map((c) => c.id);
@@ -295,16 +307,16 @@ export function formatWorkflowBoard(s: WorkflowBoardState): string[] {
     ? allCmds.join(", ") || "none"
     : `${allCmds.slice(0, MAX_CMDS).join(", ")} +${allCmds.length - MAX_CMDS}`;
 
-  // Next action hint — extract from phaseGuidance directly (avoids formatWorkflowAction parse)
-  const hint = phaseGuidance(wf.phase).replace(/^\u2022\s*/, "");
+  // User-friendly hint from formatPhaseGuidanceForUser
+  const hint = formatPhaseGuidanceForUser(wf).split("\n")[0];
+  const gatesLine = relevantGates.length > 0
+    ? `Gates: ${relevantGates.map(([label, status]) => `${label} ${status}`).join("  ")}`
+    : null;
   const lines: string[] = [
     `🧭 ${wf.phase.padEnd(14)}  → ${next ?? "done"}`,
     `   ${wf.title.slice(0, 60)}`,
     ``,
-    (wf.phase === "commit" || wf.phase === "push")
-      ? `Gates: DPAA ${dpaa}  Quality ${quality}  Review ${review}  Push ${push}`
-      : `Gates: DPAA ${dpaa}  Quality ${quality}  Review ${review}`,
-    `Tools: ${(PHASE_ALLOWED_BUILTIN_TOOLS[wf.phase] as readonly string[] ?? []).join(", ")}`,
+    ...(gatesLine ? [gatesLine] : []),
     `Cmds:  ${cmdsDisplay}`,
     ``,
     `→ ${hint}`,
