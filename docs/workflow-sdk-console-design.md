@@ -682,47 +682,63 @@ No major TUI changes yet.
 
 ## Pi Documentation Review Plan
 
-Before implementation, review the current Pi documentation pages and record which capabilities affect this design.
+> **Status: Reviewed 2026-06-04.** Findings below replace the original goals list.
 
-Known docs index:
+Reviewed docs: `sdk.md`, `rpc.md`, `tui.md`, `themes.md`, `compaction.md`, `session-format.md`, `sessions.md`, `settings.md`, `packages.md`, `providers.md`.
 
-```text
-/docs/latest/quickstart
-/docs/latest/usage
-/docs/latest/providers
-/docs/latest/containerization
-/docs/latest/settings
-/docs/latest/keybindings
-/docs/latest/sessions
-/docs/latest/compaction
-/docs/latest/extensions
-/docs/latest/skills
-/docs/latest/prompt-templates
-/docs/latest/themes
-/docs/latest/packages
-/docs/latest/models
-/docs/latest/custom-provider
-/docs/latest/sdk
-/docs/latest/rpc
-/docs/latest/json
-/docs/latest/tui
-/docs/latest/session-format
-/docs/latest/windows
-/docs/latest/termux
-/docs/latest/tmux
-/docs/latest/terminal-setup
-/docs/latest/shell-aliases
-/docs/latest/development
-```
+### Confirmed Capabilities
 
-Review goals:
+| Need | Pi Capability | Status |
+|------|--------------|--------|
+| Phase-based tool restriction | `pi.setActiveTools(names)` in extension | ✅ Implemented (MVP 2) |
+| Strict mode (no built-ins) | `noTools: "builtin"` in SDK `createAgentSession()` | ℹ️ SDK-only — future runner |
+| Guarded custom tools | `pi.registerTool()` | ✅ `submit_review_package` done |
+| Approval boundary dialog | `ctx.ui.confirm()` + `SelectList` overlay | ✅ Works in interactive + RPC |
+| Phase status footer | `ctx.ui.setStatus("workflow", ...)` | ✅ Partially implemented |
+| Workflow board widget | `ctx.ui.setWidget()` above editor | ✅ Available, not yet implemented |
+| Gate run progress spinner | `BorderedLoader` component | ⚠️ Not yet implemented |
+| Tool result suppression | `renderCall` / `renderResult` on guarded tools | ⚠️ Not yet implemented |
+| Rich approval overlay | `ctx.ui.custom(..., { overlay: true })` | ⚠️ Interactive-only (RPC returns `undefined`) |
+| Audit log to session file | `pi.appendEntry(customType, data)` → CustomEntry | ✅ `field-log.ts` implemented |
+| State reconstruction on reload | `ctx.sessionManager.getEntries()` on `session_start` | ❌ Guard tokens currently reset on restart |
+| Session naming | `pi.setSessionName("[wf] " + title)` | ❌ Not yet called at workflow start |
+| Phase transition labels in /tree | `pi.setLabel(entryId, "phase:" + to)` | ❌ Not yet implemented |
+| Fork detection | `session_start { reason: "fork" }` event | ❌ Not handled |
+| Workflow-aware compaction | `session_before_compact` hook | ❌ Not yet implemented (MVP 5) |
+| External audit via RPC stream | `tool_execution_end`, `agent_end` events | ✅ No changes needed |
+| OAuth auth (Pro/Max) | `auth.json` type: "oauth" | ✅ Working |
+| Workflow extension as npm package | `pi install npm:@org/pkg` | ℹ️ Post-MVP |
 
-- identify extension APIs that replace standalone SDK work
-- identify TUI, theme, command, and rendering capabilities
-- identify model/provider/OAuth capabilities
-- identify session/state/compaction constraints
-- identify platform or terminal constraints relevant to workflow UX
-- update this design only with documented capabilities and remaining gaps
+### Newly Identified Gaps (not in original design)
+
+1. **Guard tokens lost on session restart** — `dpaaGuardSatisfiedToken` etc. live in process memory only. They reset on every new session. Fix: persist each token grant as a `CustomEntry` on issue; reconstruct on `session_start` by scanning entries.
+
+2. **Compaction truncates gate output** — tool results are truncated to 2000 chars during compaction. Long gate output (DPAA reports, code quality) will be lossy in summaries. Fix: increase `compaction.keepRecentTokens` in `.pi/settings.json`; store full output to `.harness/` files.
+
+3. **Fork handling missing** — When user `/fork`s a session, the new session starts with no workflow state and no guard evidence. Extension must handle `session_start { reason: "fork" }` to either clone or clear workflow state.
+
+4. **`shellCommandPrefix` is session-wide** — Cannot apply phase-specific bash prefixes via settings. This confirms `workflow_run_command` guarded tool (MVP 2) is the right approach for structured command execution.
+
+5. **OAuth + Pi = extra usage billing** — Claude Pro/Max OAuth login + Pi calls = extra usage billed per-token, not against the subscription plan. Vertex AI (`@twogiants/pi-anthropic-vertex`) is the alternative for cost control.
+
+6. **`ctx.ui.custom()` not available in RPC** — Rich overlay components (approval dialog with hash display) fall back to `confirm()` + `select()` in RPC mode. Design approval UX using `confirm()`/`select()` as primary, overlay as enhancement only.
+
+7. **No table component in TUI** — Workflow board must use manual string padding. Use `truncateToWidth()` to enforce line width limits in all widget renders.
+
+8. **51 theme tokens required** — `workflow-console.json` must define all 51 tokens. Verify completeness.
+
+9. **Session not named at workflow start** — `pi.setSessionName()` not called. Makes `/resume` harder in multi-workflow environments.
+
+10. **Phase transitions not labeled** — `pi.setLabel()` not called after transitions. Users cannot filter `/tree` by workflow phase.
+
+### Design Decisions Confirmed by Review
+
+- **Widget-first, overlay-on-demand**: `setWidget()` for persistent board; overlay only for modal approvals.
+- **`ctx.ui.confirm()` for approvals**: Works in interactive + RPC. Do not make `ctx.ui.custom()` the primary approval path.
+- **`workflow-console.json` already in correct location**: `.pi/themes/` — extend in place.
+- **`noTools: "builtin"` deferred**: SDK-level only. Current `setActiveTools()` approach is correct for the Pi extension surface.
+- **RPC event stream for external audit**: No extension changes needed; external consumer reads `tool_execution_end` events.
+- **Session CustomEntry for audit**: `pi.appendEntry()` writes to session JSONL; entries survive compaction and can be replayed.
 
 ## Test Strategy
 

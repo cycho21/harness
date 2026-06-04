@@ -1,10 +1,11 @@
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { WorkflowInstance, WorkflowPhase, DpaaReport, DpaaRunReceipt } from "./types";
 import { createArtifactSnapshot, escapeForDoubleQuotedArg, findPlanForDpaa, updateSnapshotWithDpaa, writeDpaaReceipt } from "./artifacts";
 import { getBranch, getGitRoot } from "./git";
+import { sha256File } from "./storage";
 import { banner, table } from "./ui";
 import { writeFieldLogEvent } from "./field-log";
 
@@ -169,7 +170,35 @@ function runSbadrAnalysis(pythonCommand: string, planPath: string): { ok: boolea
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function runPreTransitionGate(workflow: WorkflowInstance, from: WorkflowPhase, to: WorkflowPhase): Promise<{ ok: boolean; message: string; gate?: WorkflowGate }> {
+export async function runPreTransitionGate(
+  workflow: WorkflowInstance,
+  from: WorkflowPhase,
+  to: WorkflowPhase,
+  opts?: { approvedPlanSha256?: string },
+): Promise<{ ok: boolean; message: string; gate?: WorkflowGate; planSha256?: string }> {
+  // MVP 3: hash staleness check — if plan was approved but has since changed, block
+  if (from === "plan_review" && to === "implement" && opts?.approvedPlanSha256) {
+    const currentPlanPath = findPlanForDpaa();
+    if (currentPlanPath) {
+      const currentHash = sha256File(currentPlanPath);
+      if (currentHash !== opts.approvedPlanSha256) {
+        return {
+          ok: false,
+          gate: "dpaa",
+          message: formatGateBlocked({
+            gate: "DPAA (Stale Approval)",
+            why: `The plan file has changed since DPAA was approved. Approved hash: ${opts.approvedPlanSha256.slice(0, 12)}…, current hash: ${currentHash.slice(0, 12)}…`,
+            next: [
+              "Show the plan changes to the user and explain what changed",
+              "Update the plan if the changes are intentional, then run /workflow approve again",
+              "DPAA will re-run against the updated plan before implementation is allowed",
+            ],
+            skip: "/workflow skip dpaa <reason>",
+          }),
+        };
+      }
+    }
+  }
   if (from === "plan_review" && to === "implement") {
     const result = await runDpaaGate(workflow, from, to);
     return result.ok ? result : { ...result, gate: "dpaa" };
@@ -211,15 +240,34 @@ export function runCodeQualityGate(workflow: WorkflowInstance): { ok: boolean; m
     return { ok: true, message: "Code quality guard skipped: no Gradle project detected" };
   }
 
-  const command = configured || (process.platform === "win32" && fs.existsSync(path.join(root, "gradlew.bat")) ? "gradlew.bat codeQualityGuard" : "./gradlew codeQualityGuard");
+  // Resolve command — prefer execFileSync for Gradle to avoid shell interpolation
+  // For HARNESS_CODE_QUALITY_GUARD_CMD we keep execSync since it may contain shell syntax
+  const command = configured || (process.platform === "win32" && fs.existsSync(path.join(root, "gradlew.bat"))
+    ? `${path.join(root, "gradlew.bat")} codeQualityGuard`
+    : `${path.join(root, "gradlew")} codeQualityGuard`);
+  const gradleBin = configured ? null : (process.platform === "win32" && fs.existsSync(path.join(root, "gradlew.bat"))
+    ? path.join(root, "gradlew.bat")
+    : path.join(root, "gradlew"));
   try {
-    execSync(command, {
-      cwd: root,
-      encoding: "utf-8",
-      env: { ...process.env, PYTHONIOENCODING: "utf-8" },
-      stdio: "pipe",
-      maxBuffer: 1024 * 1024 * 10,
-    });
+    if (configured) {
+      // Developer-controlled env var: allow shell syntax (execSync)
+      execSync(configured, {
+        cwd: root,
+        encoding: "utf-8",
+        env: { ...process.env, PYTHONIOENCODING: "utf-8" },
+        stdio: "pipe",
+        maxBuffer: 1024 * 1024 * 10,
+      });
+    } else {
+      // Gradle wrapper: use execFileSync (structured argv, no shell interpolation)
+      execFileSync(gradleBin!, ["codeQualityGuard"], {
+        cwd: root,
+        encoding: "utf-8",
+        env: { ...process.env, PYTHONIOENCODING: "utf-8" },
+        stdio: "pipe",
+        maxBuffer: 1024 * 1024 * 10,
+      });
+    }
     return { ok: true, message: `Code quality guard satisfied: ${command}` };
   } catch (error) {
     const err = error as { stdout?: string; stderr?: string; status?: number };
@@ -262,7 +310,7 @@ export function runCodeQualityGate(workflow: WorkflowInstance): { ok: boolean; m
   }
 }
 
-export function runDpaaGate(workflow: WorkflowInstance, from: WorkflowPhase, to: WorkflowPhase): { ok: boolean; message: string } {
+export function runDpaaGate(workflow: WorkflowInstance, from: WorkflowPhase, to: WorkflowPhase): { ok: boolean; message: string; planSha256?: string } {
   const skip = consumeSkipToken("dpaa");
   if (skip) {
     writeFieldLogEvent({
@@ -347,7 +395,7 @@ export function runDpaaGate(workflow: WorkflowInstance, from: WorkflowPhase, to:
   }
 
   try {
-    execSync(`${quoteCommand(pythonCommand)} -m dpaa.cli "${escapeForDoubleQuotedArg(checkedPlanPath)}" --output "${escapeForDoubleQuotedArg(reportPath)}" --no-text`, {
+    execFileSync(pythonCommand, ["-m", "dpaa.cli", checkedPlanPath, "--output", reportPath, "--no-text"], {
       cwd: HARNESS_ROOT,
       encoding: "utf-8",
       env: {
@@ -403,7 +451,7 @@ export function runDpaaGate(workflow: WorkflowInstance, from: WorkflowPhase, to:
         installCoreNlp();
       } catch (err) {
         console.error(`[harness] CoreNLP install failed: ${err}. Skipping SBADR.`);
-        return { ok: true, message: "DPAA check passed (SBADR skipped: CoreNLP install failed)" };
+        return { ok: true, message: "DPAA check passed (SBADR skipped: CoreNLP install failed)", planSha256: sha256File(checkedPlanPath) };
       }
     }
     if (!canImportSbadr(pythonCommand)) {
@@ -413,7 +461,7 @@ export function runDpaaGate(workflow: WorkflowInstance, from: WorkflowPhase, to:
     console.error("[harness] Running SBADR syntactic ambiguity analysis (CoreNLP startup may take ~60s)...");
     const sbadr = runSbadrAnalysis(pythonCommand, checkedPlanPath);
     if (!sbadr.report) {
-      return { ok: true, message: `DPAA check passed (SBADR skipped: ${sbadr.error ?? "report unreadable"})` };
+      return { ok: true, message: `DPAA check passed (SBADR skipped: ${sbadr.error ?? "report unreadable"})`, planSha256: sha256File(checkedPlanPath) };
     }
     const sr = sbadr.report;
 
@@ -484,7 +532,7 @@ export function runDpaaGate(workflow: WorkflowInstance, from: WorkflowPhase, to:
       };
     }
 
-    return { ok: true, message: "DPAA + SBADR check passed" };
+    return { ok: true, message: "DPAA + SBADR check passed", planSha256: sha256File(checkedPlanPath) };
     // ── end SBADR ─────────────────────────────────────────────────────────────
   }
 

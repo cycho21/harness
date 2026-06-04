@@ -24,7 +24,7 @@ export function createWorkflow(title: string): WorkflowInstance {
   };
 }
 
-export type WorkflowAdvanceTransition = { from: WorkflowPhase; to: WorkflowPhase; message: string };
+export type WorkflowAdvanceTransition = { from: WorkflowPhase; to: WorkflowPhase; message: string; planSha256?: string };
 
 export function getNextPhase(phase: WorkflowPhase): WorkflowPhase | null {
   return sharedNextPhase(phase);
@@ -46,7 +46,11 @@ export function transitionWorkflow(workflow: WorkflowInstance, to: WorkflowPhase
   workflow.updatedAt = Date.now();
 }
 
-export async function advanceWorkflow(workflow: WorkflowInstance | null, reason: string): Promise<{ ok: boolean; message: string; gate?: string; transitions?: WorkflowAdvanceTransition[] }> {
+export async function advanceWorkflow(
+  workflow: WorkflowInstance | null,
+  reason: string,
+  opts?: { approvedPlanSha256?: string },
+): Promise<{ ok: boolean; message: string; gate?: string; transitions?: WorkflowAdvanceTransition[] }> {
   if (!workflow) return { ok: false, message: "진행 중인 workflow가 없습니다. /workflow start 를 먼저 실행하세요." };
   const workspace = validateWorkflowWorkspace(workflow);
   if (!workspace.ok) return { ok: false, message: formatWorkspaceMismatch(workspace) };
@@ -65,14 +69,14 @@ export async function advanceWorkflow(workflow: WorkflowInstance | null, reason:
       return { ok: false, message: `Workflow transition blocked by policy: ${from} → ${next}` };
     }
 
-    const gate = await runPreTransitionGate(workflow, from, next);
+    const gate = await runPreTransitionGate(workflow, from, next, opts);
     if (!gate.ok) {
       if (transitions.length === 0) return { ok: false, message: gate.message, gate: gate.gate };
       break;
     }
 
     transitionWorkflow(workflow, next, reason);
-    transitions.push({ from, to: next, message: gate.message });
+    transitions.push({ from, to: next, message: gate.message, planSha256: gate.planSha256 });
 
     // Preparation/review phases advance automatically to the next approval boundary.
     // Risky boundaries (plan_review→implement, commit→push) still require a user

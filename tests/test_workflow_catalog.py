@@ -18,7 +18,9 @@ def test_workflow_load_command_restores_persisted_instance():
     workflow = WORKFLOW_EXTENSION.read_text(encoding="utf-8")
     core = CORE.read_text(encoding="utf-8")
 
-    assert '"list", "load"' in workflow
+    # list and load commands must both be handled
+    assert 'command === "list"' in workflow
+    assert 'command === "load"' in workflow
     assert "loadPersistedWorkflow" in workflow
     assert "state.workflow = persisted" in workflow
     assert 'export * from "./catalog";' in core

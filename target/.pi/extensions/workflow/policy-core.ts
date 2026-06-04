@@ -126,10 +126,13 @@ function normalizeContextStrategy(value: unknown): Partial<Record<WorkflowPhase,
   return result;
 }
 
+let _policyCache: SharedWorkflowPolicy | null = null;
+
 export function loadSharedWorkflowPolicy(): SharedWorkflowPolicy {
+  if (_policyCache) return _policyCache;
   try {
     const parsed = JSON.parse(fs.readFileSync(POLICY_FILE, "utf-8")) as Partial<SharedWorkflowPolicy>;
-    return {
+    _policyCache = {
       ...DEFAULT_POLICY,
       ...parsed,
       phases: asWorkflowPhaseList(parsed.phases, DEFAULT_POLICY.phases),
@@ -143,8 +146,10 @@ export function loadSharedWorkflowPolicy(): SharedWorkflowPolicy {
       reminderPolicy: parsed.reminderPolicy && typeof parsed.reminderPolicy === "object" ? parsed.reminderPolicy : DEFAULT_POLICY.reminderPolicy,
       phaseGuidance: parsed.phaseGuidance && typeof parsed.phaseGuidance === "object" ? parsed.phaseGuidance : DEFAULT_POLICY.phaseGuidance,
     };
-  } catch {
-    return DEFAULT_POLICY;
+    return _policyCache;
+  } catch (err) {
+    console.error(`[harness] Failed to load workflow policy from ${POLICY_FILE}: ${err}. Using defaults.`);
+    return DEFAULT_POLICY; // do not cache on error — next call may succeed
   }
 }
 
@@ -191,6 +196,38 @@ export function sharedHardRules(): string[] {
 
 export function sharedContextStrategy(phase: WorkflowPhase): PhaseContextStrategy | null {
   return loadSharedWorkflowPolicy().contextStrategy[phase] ?? null;
+}
+
+// ─── Phase-based tool policy ─────────────────────────────────────────────────
+
+const READ_ONLY_BUILTIN = ["read", "bash", "grep", "find", "ls"] as const;
+const WRITE_BUILTIN = ["write", "edit"] as const;
+const ALL_BUILTIN = [...READ_ONLY_BUILTIN, ...WRITE_BUILTIN] as const;
+
+/**
+ * Defines which built-in tools are allowed in each workflow phase.
+ * Extension tools (e.g. submit_review_package) are always appended by getPhaseAllowedTools().
+ */
+export const PHASE_ALLOWED_BUILTIN_TOOLS: Record<WorkflowPhase, readonly string[]> = {
+  interview:       ALL_BUILTIN,
+  plan:            ALL_BUILTIN,
+  plan_review:     READ_ONLY_BUILTIN,
+  implement:       ALL_BUILTIN,
+  code_review:     READ_ONLY_BUILTIN,
+  review_approved: ["read"],
+  document:        ALL_BUILTIN,
+  commit:          READ_ONLY_BUILTIN,
+  push:            READ_ONLY_BUILTIN,
+  done:            ["read"],
+};
+
+/**
+ * Returns the full allowed tool name list for a given phase.
+ * extensionToolNames should come from pi.getAllTools() filtered to non-builtin sources.
+ */
+export function getPhaseAllowedTools(phase: WorkflowPhase, extensionToolNames: string[] = []): string[] {
+  const builtins: readonly string[] = PHASE_ALLOWED_BUILTIN_TOOLS[phase] ?? ALL_BUILTIN;
+  return [...new Set([...builtins, ...extensionToolNames])];
 }
 
 export function sharedSubagentHandoffContract(): string[] {

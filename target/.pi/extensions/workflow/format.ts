@@ -3,7 +3,8 @@ import { listArtifactSnapshots } from "./artifacts";
 import { validateWorkflowWorkspace, formatWorkspaceMismatch } from "./gates";
 import { getNextPhase } from "./state";
 import { banner, table } from "./ui";
-import { isSharedAutoAdvancePhase, sharedContextStrategy, sharedHardRules, sharedPhaseGuidance, sharedSubagentHandoffContract } from "./policy-core";
+import { isSharedAutoAdvancePhase, sharedContextStrategy, sharedHardRules, sharedPhaseGuidance, sharedSubagentHandoffContract, PHASE_ALLOWED_BUILTIN_TOOLS } from "./policy-core";
+import { getCatalogCommandsForPhase } from "./catalog";
 
 export function formatWorkflowStatus(workflow: WorkflowInstance | null): string {
   if (!workflow) {
@@ -226,7 +227,7 @@ export function phaseGuidance(phase: WorkflowPhase): string {
     case "implement":
       return "• Deliverable: implement the approved plan only. After implementation and narrow verification are complete, advance to code_review automatically; do not ask user approval for this transition.";
     case "code_review":
-      return "• Deliverable: run/fix the code review loop. Advancing out of code_review requires submit_review_package and mechanically runs codeQualityGuard (Checkstyle/PMD/tests) before the guard is satisfied.";
+      return "• Deliverable: run/fix the code review loop. Advancing to review_approved mechanically runs codeQualityGuard (Checkstyle/PMD/tests) after submit_review_package is complete.";    
     case "review_approved":
       return "• Deliverable: ensure review findings are addressed/accepted, then continue automatically toward documentation and commit preparation.";
     case "document":
@@ -240,3 +241,60 @@ export function phaseGuidance(phase: WorkflowPhase): string {
   }
 }
 
+
+// ─── Workflow board widget ─────────────────────────────────────────────────
+// Renders a compact status board for ctx.ui.setWidget().
+// Each line is a plain string; width enforcement is the caller's responsibility.
+
+export type WorkflowBoardState = {
+  workflow: WorkflowInstance | null;
+  gateFailures: Map<string, number>;
+  dpaaGuardSatisfied: boolean;
+  codeQualityGuardSatisfied: boolean;
+  reviewPackageSubmitted: boolean;
+  pushGuardSatisfied: boolean;
+};
+
+export function formatWorkflowBoard(s: WorkflowBoardState): string[] {
+  if (!s.workflow) {
+    return [
+      "⚪ No active workflow",
+      "  /workflow start <goal>",
+    ];
+  }
+
+  const wf = s.workflow;
+  const next = getNextPhase(wf.phase);
+
+  // Gate status indicators
+  const dpaa    = s.dpaaGuardSatisfied       ? "✅ pass" : (s.gateFailures.get("dpaa") ?? 0) > 0         ? "❌ fail" : "⏳ pending";
+  const quality = s.codeQualityGuardSatisfied ? "✅ pass" : (s.gateFailures.get("code-quality") ?? 0) > 0 ? "❌ fail" : "⏳ pending";
+  const review  = s.reviewPackageSubmitted    ? "✅ pass"  : "⏳ pending";
+  const push    = s.pushGuardSatisfied        ? "✅ pass"  : "⏳ pending";
+
+  // Phase-allowed commands — truncate if too many to fit in 80 chars
+  const allCmds = getCatalogCommandsForPhase(wf.phase).map((c) => c.id);
+  const MAX_CMDS = 4;
+  const cmdsDisplay = allCmds.length <= MAX_CMDS
+    ? allCmds.join(", ") || "none"
+    : `${allCmds.slice(0, MAX_CMDS).join(", ")} +${allCmds.length - MAX_CMDS}`;
+
+  // Next action hint — extract from phaseGuidance directly (avoids formatWorkflowAction parse)
+  const hint = phaseGuidance(wf.phase).replace(/^\u2022\s*/, "");
+  const hintShort = hint.slice(0, 76);
+
+  const lines: string[] = [
+    `🧭 ${wf.phase.padEnd(14)}  → ${next ?? "done"}`,
+    `   ${wf.title.slice(0, 60)}`,
+    ``,
+    (wf.phase === "commit" || wf.phase === "push")
+      ? `Gates: DPAA ${dpaa}  Quality ${quality}  Review ${review}  Push ${push}`
+      : `Gates: DPAA ${dpaa}  Quality ${quality}  Review ${review}`,
+    `Tools: ${(PHASE_ALLOWED_BUILTIN_TOOLS[wf.phase] as readonly string[] ?? []).join(", ")}`,
+    `Cmds:  ${cmdsDisplay}`,
+    ``,
+    `→ ${hintShort}`,
+  ];
+
+  return lines;
+}

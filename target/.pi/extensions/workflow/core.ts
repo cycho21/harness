@@ -11,3 +11,4 @@ export * from "./format";
 export * from "./catalog";
 export * from "./field-log";
 export * from "./reminders";
+export * from "./edit-scope";

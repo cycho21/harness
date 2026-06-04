@@ -6,7 +6,11 @@ export function isApprovalText(text: string): boolean {
   const normalized = text.trim().toLowerCase();
   if (!normalized) return false;
   const exactApprovals = ["응", "네", "예", "좋아", "좋습니다", "진행해", "진행해줘", "계속해", "승인", "approve", "approved", "ok", "okay", "go ahead", "lgtm"];
-  const containsApprovals = ["진행해", "continue", "go ahead", "proceed"];
+  // Narrow approval tokens: avoid common English words ("continue", "proceed")
+  // that appear in unrelated messages like "continue debugging" or "proceed with analysis".
+  // "진행해" is in exactApprovals (exact match). Keeping it in containsApprovals would
+  // also match "진행해도 괜찮을까요?" (asking if it's ok to proceed) — false positive.
+  const containsApprovals = ["go ahead"];
   return exactApprovals.some((token) => normalized === token) ||
     containsApprovals.some((token) => normalized.includes(token));
 }
