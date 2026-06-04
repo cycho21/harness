@@ -281,8 +281,6 @@ export function formatWorkflowBoard(s: WorkflowBoardState): string[] {
 
   // Next action hint — extract from phaseGuidance directly (avoids formatWorkflowAction parse)
   const hint = phaseGuidance(wf.phase).replace(/^\u2022\s*/, "");
-  const hintShort = hint.slice(0, 76);
-
   const lines: string[] = [
     `🧭 ${wf.phase.padEnd(14)}  → ${next ?? "done"}`,
     `   ${wf.title.slice(0, 60)}`,
@@ -293,7 +291,7 @@ export function formatWorkflowBoard(s: WorkflowBoardState): string[] {
     `Tools: ${(PHASE_ALLOWED_BUILTIN_TOOLS[wf.phase] as readonly string[] ?? []).join(", ")}`,
     `Cmds:  ${cmdsDisplay}`,
     ``,
-    `→ ${hintShort}`,
+    `→ ${hint}`,
   ];
 
   return lines;

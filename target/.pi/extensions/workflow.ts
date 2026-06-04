@@ -17,7 +17,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { Text, Box, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -209,37 +209,33 @@ export default function (pi: ExtensionAPI) {
   function refreshBoard(ctx: { hasUI: boolean; ui: { setWidget: (...args: unknown[]) => void; theme?: unknown } }): void {
     if (!ctx.hasUI) return;
     try {
-      const theme = (ctx.ui as any).theme;
-      const lines = formatWorkflowBoard(getBoardState()).map((line) => {
-        if (!theme) return line;
-        // Colour phase name
-        if (line.startsWith("🧭")) {
-          return theme.fg("accent", line);
-        }
-        // Colour gate status line
-        if (line.startsWith("Gates:")) {
-          return line
-            .replace(/✅ pass/g, theme.fg("success", "✅ pass"))
-            .replace(/❌ fail/g, theme.fg("error", "❌ fail"))
-            // (no "✅ submitted" — gate vocab unified to "✅ pass" in formatWorkflowBoard)
-            .replace(/⏳ pending/g, theme.fg("muted", "⏳ pending"));
-        }
-        if (line.startsWith("Tools:") || line.startsWith("Cmds:")) {
+      (ctx.ui as any).setWidget("workflow-board", (_tui: unknown, theme: any) => {
+        const rawLines = formatWorkflowBoard(getBoardState());
+        const coloredLines = rawLines.map((line) => {
+          if (!theme) return line;
+          if (line.startsWith("🧭")) return theme.fg("accent", line);
+          if (line.startsWith("Gates:")) {
+            return line
+              .replace(/✅ pass/g, theme.fg("success", "✅ pass"))
+              .replace(/❌ fail/g, theme.fg("error", "❌ fail"))
+              .replace(/⏳ pending/g, theme.fg("muted", "⏳ pending"));
+          }
+          if (line.startsWith("Tools:") || line.startsWith("Cmds:")) return theme.fg("dim", line);
+          if (line.startsWith("→")) return theme.fg("warning", line);
+          if (line.startsWith("   ") && !line.trim().startsWith("Gates") && !line.trim().startsWith("Tools") && !line.trim().startsWith("Cmds")) {
+            return theme.fg("text", line);
+          }
           return theme.fg("dim", line);
-        }
-        if (line.startsWith("→")) {
-          return theme.fg("warning", line);
-        }
-        if (line.startsWith("   ") && !line.trim().startsWith("Gates") && !line.trim().startsWith("Tools") && !line.trim().startsWith("Cmds")) {
-          // title line — slightly brighter than dim
-          return theme ? theme.fg("text", line) : line;
-        }
-        return theme.fg("dim", line);
+        });
+        const content = coloredLines.join("\n");
+        const text = new Text(content, 0, 0);
+        const bgFn = theme ? (s: string) => theme.bg("customMessageBg", s) : undefined;
+        const box = new Box(1, 0, bgFn);
+        box.addChild(text);
+        return box;
       });
-      (ctx.ui as any).setWidget("workflow-board", lines);
     } catch { /* non-fatal */ }
   }
-
   function refreshStatus(ctx: { hasUI: boolean; ui: { setStatus?: (...args: unknown[]) => void; theme?: unknown } }): void {
     if (!ctx.hasUI || typeof (ctx.ui as any).setStatus !== "function") return;
     try {
@@ -1107,6 +1103,9 @@ Risk level: ${spec.riskLevel}`,
         }
         cancelWorkflowContinuationPending();
         state.workflow = persisted;
+        applyPhaseToolPolicy(state.workflow.phase);
+        refreshBoard(ctx);
+        refreshStatus(ctx);
         ctx.ui.notify([`✅ Workflow 인스턴스를 메모리에 로드했습니다: [${persisted.phase}] ${persisted.title}`, "", formatWorkflowStatus(state.workflow)].join("\n"), "info");
         return;
       }
@@ -1126,6 +1125,7 @@ Risk level: ${spec.riskLevel}`,
         const result = await advanceWorkflow(state.workflow, "user_approved", { approvedPlanSha256 });
         if (!result.ok) {
           if (result.gate) { state.gateFailures.set(result.gate, (state.gateFailures.get(result.gate) ?? 0) + 1); }
+          refreshBoard(ctx);
           ctx.ui.notify([result.message, "", formatWorkflowAction(state.workflow)].join("\n"), "warning");
           return;
         }

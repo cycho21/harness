@@ -1,0 +1,20 @@
+{
+  "workflowId": "wf-20260604-043655",
+  "version": "002-dpaa-check-before-implementation",
+  "reason": "dpaa-check-before-implementation",
+  "source": "dpaa",
+  "createdAt": "2026-06-04T05:11:58.547Z",
+  "previous": "001-dpaa-check-before-implementation",
+  "path": "D:\\harness\\.ai\\interview\\runs\\wf-20260604-043655\\002-dpaa-check-before-implementation",
+  "specPath": "D:\\harness\\.ai\\interview\\runs\\wf-20260604-043655\\002-dpaa-check-before-implementation\\spec.md",
+  "specSha256": "a34fc54092177cee479d2de484ea5dfffffa5479c7f721faf5d9baad3498c3ae",
+  "planPath": "D:\\harness\\.ai\\interview\\runs\\wf-20260604-043655\\002-dpaa-check-before-implementation\\plan.md",
+  "planSha256": "887d9bb78b262b7a861bae3f5b51dd6dc3b12cac79d05b085b6e4da723a01be4",
+  "dpaa": {
+    "level": "PASS",
+    "overall": 4,
+    "findingsCount": 2,
+    "exitCode": 0,
+    "reportSha256": "a9368796ffb058173bb82f3469e79d068159b56b86a5fb875cc211fd78fc7e53"
+  }
+}
