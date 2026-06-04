@@ -11,30 +11,46 @@ export function formatWorkflowStatus(workflow: WorkflowInstance | null): string 
     return [
       banner("⚪ Workflow 없음"),
       "시작: /workflow start <목표>",
-      "",
-      formatWorkflowAction(null),
     ].join("\n");
   }
   const next = getNextPhase(workflow.phase);
+  const ws = validateWorkflowWorkspace(workflow);
   return [
     banner("🧭 Workflow 상태"),
     table([
       ["항목", "값"],
-      ["ID", workflow.id],
       ["목표", workflow.title],
       ["현재 단계", workflow.phase],
       ["다음 단계", next ?? "없음"],
-      ["시작 CWD", workflow.cwd],
-      ["Git root", workflow.gitRoot ?? "없음"],
       ["Branch", workflow.branch],
-      ["Workspace", validateWorkflowWorkspace(workflow).ok ? "ok" : "mismatch"],
-      ["File restore", "undo/redo/restore use git workspace checkpoints"],
-      ["Undo 가능", workflow.history.length > 0 ? "yes" : "no"],
-      ["Redo 가능", workflow.undone.length > 0 ? "yes" : "no"],
+      ["Workspace", ws.ok ? "ok" : "⚠️ mismatch"],
+      ["Undo", workflow.history.length > 0 ? `${workflow.history.length}개 사용 가능` : "없음"],
     ]),
     "",
-    formatWorkflowAction(workflow),
+    formatPhaseGuidanceForUser(workflow),
   ].join("\n");
+}
+
+/** User-facing phase summary — no LLM instruction tags. */
+export function formatPhaseGuidanceForUser(workflow: WorkflowInstance): string {
+  const next = getNextPhase(workflow.phase);
+  const lines: string[] = [];
+  switch (workflow.phase) {
+    case "interview":    lines.push("요구사항 정리 중. 완료 후 plan → plan_review 로 자동 진행됩니다."); break;
+    case "plan":         lines.push("플랜 작성 중. 완료 후 plan_review 로 자동 진행됩니다."); break;
+    case "plan_review":  lines.push("플랜 검토 대기 중. workflow_approve 로 구현을 시작하세요."); break;
+    case "implement":    lines.push("구현 중. 완료 후 code_review 로 자동 진행됩니다."); break;
+    case "code_review":  lines.push("코드 리뷰 중. submit_review_package 완료 후 review_approved 로 진행됩니다."); break;
+    case "review_approved": lines.push("리뷰 완료. 문서화 → commit 준비로 자동 진행됩니다."); break;
+    case "document":    lines.push("문서화 중. 완료 후 commit 준비로 자동 진행됩니다."); break;
+    case "commit":      lines.push("커밋 준비 완료. workflow_approve 로 push 단계로 진입하세요."); break;
+    case "push":        lines.push("Push 준비 완료. git push 를 실행하세요."); break;
+    case "done":        lines.push("✅ 완료됐습니다."); break;
+  }
+  if (next && workflow.phase !== "done") {
+    lines.push(`다음 단계: ${next}`);
+  }
+  return lines.join("\n");
 }
 
 export function formatWorkflowAction(workflow: WorkflowInstance | null): string {
@@ -74,7 +90,7 @@ export function formatWorkflowAction(workflow: WorkflowInstance | null): string 
       lines.push(
         "- Transition mode: user approval boundary before implement.",
         "- Required now: present the plan and call workflow_approve tool to get explicit yes/no approval from the user.",
-        "- Approval runs DPAA and SBADR; if either fails, fix/clarify before implementation.",
+        "- Approval validates the plan for ambiguity before implementation begins; if validation fails, clarify the plan with the user.",
       );
       break;
     case "implement":
@@ -109,7 +125,7 @@ export function formatWorkflowAction(workflow: WorkflowInstance | null): string 
       lines.push(
         "- Transition mode: user approval boundary before push.",
         "- Required now: provide diff summary, risk/verification summary, and proposed commit message; commit only when appropriate.",
-        "- Ask for explicit user approval before entering push.",
+        "- Call workflow_approve tool when ready to push — it runs the policy scan and gets user confirmation.",
       );
       break;
     case "push":

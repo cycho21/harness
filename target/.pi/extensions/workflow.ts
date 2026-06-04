@@ -727,22 +727,27 @@ Risk level: ${spec.riskLevel}`,
         return { content: [{ type: "text", text: "UI required for workflow approval. Ask the user to type /workflow approve." }], details: { ok: false } };
       }
 
-      const next = getNextPhase(state.workflow.phase);
-      const confirmed = await ctx.ui.confirm(
-        `${params.summary}\n\n[${state.workflow.phase}] → [${next ?? "done"}]\n\n다음 단계로 진행할까요?`,
-      );
-      if (!confirmed) {
-        return { content: [{ type: "text", text: "User declined. Staying in current phase." }], details: { ok: false, reason: "user-declined" } };
-      }
-
+      // Pre-flight checks before showing any dialog — fail fast with a clear message
       if (state.workflow.phase === "code_review" && state.reviewPackageToken?.workflowId !== state.workflow.id) {
         return {
-          content: [{ type: "text", text: "Review package is required before review_approved. Run submit_review_package first." }],
+          content: [{ type: "text", text: "⚠️ submit_review_package를 먼저 호출해야 합니다. 자기 리뷰, 독립 리뷰어 리뷰, quality gate를 완료한 후 submit_review_package를 호출하세요." }],
           details: { ok: false, reason: "review-package-required" },
         };
       }
-      if (state.workflow.phase === "commit" && !(await confirmPushPolicyForPushPhase(ctx))) {
-        return { content: [{ type: "text", text: "Push policy confirmation required before entering push phase." }], details: { ok: false } };
+
+      // commit → push: policy scan owns its own dialog; skip the generic confirm to avoid double dialogs
+      if (state.workflow.phase === "commit") {
+        if (!(await confirmPushPolicyForPushPhase(ctx))) {
+          return { content: [{ type: "text", text: "Push policy 확인이 거부됐습니다. Push 단계 진입이 취소됩니다." }], details: { ok: false, reason: "policy-declined" } };
+        }
+      } else {
+        const next = getNextPhase(state.workflow.phase);
+        const confirmed = await ctx.ui.confirm(
+          `${params.summary}\n\n[${state.workflow.phase}] → [${next ?? "done"}]\n\n다음 단계로 진행할까요?`,
+        );
+        if (!confirmed) {
+          return { content: [{ type: "text", text: "취소됐습니다. 현재 단계를 유지합니다." }], details: { ok: false, reason: "user-declined" } };
+        }
       }
 
       const workflowId = state.workflow.id;
