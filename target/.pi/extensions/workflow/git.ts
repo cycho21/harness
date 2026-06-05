@@ -43,34 +43,22 @@ export function getBranch(root: string): string {
 export function getUntestedClasses(root: string): string[] {
   const EXCLUDE_SUFFIX = new RegExp(
     "(" + [
-      // JPA / 데이터 컨테이너
-      "Entity", "Dto", "VO", "Vo",
-      // API 경계
-      "Request", "Response", "Payload", "Command", "Query",
-      // Spring 설정
+      // JPA / 데이터 컨테이너 — 로직 없음
+      "Entity",
+      // API 데이터 운반체 — 필드 + getter/setter만
+      "Dto", "VO", "Vo", "Request", "Response", "Payload",
+      // Spring 설정 — Bean 선언만
       "Config", "Configuration", "Application", "Properties", "Settings",
-      // 웹 레이어 (통합테스트로 커버)
-      "Controller", "RestController", "Advice", "Resolver",
-      // 인프라 / 이벤트
-      "Client", "Publisher", "Subscriber", "Consumer", "Producer",
-      "Listener", "EventListener", "Event",
-      // AOP / 필터 체인
-      "Interceptor", "Filter", "Handler", "Aspect",
-      // 예외 / 타입
-      "Exception", "Error", "Enum", "Record", "Constants", "Constant",
-      // 스케줄링
-      "Scheduler", "Job", "Task",
-      // 변환 / 매핑
-      "Converter", "Mapper", "Serializer", "Deserializer", "Transformer",
-      // 디자인 패턴 구조체
-      "Factory", "Builder", "Adapter", "Proxy", "Decorator", "Wrapper",
-      "Provider", "Registry", "Holder", "Context",
-      // 조회 보조
-      "Specification", "Criteria", "Projection", "Checker",
-      // 응답 래퍼
-      "Result", "Info", "Detail", "Summary", "Form",
-      // 기타 Spring
-      "Monitor", "Watcher",
+      // 예외 / 타입 — 직접 로직 없음
+      "Exception", "Error", "Enum", "Record",
+      // 상수
+      "Constants", "Constant",
+      // 이벤트 / 메시지 데이터 컨테이너
+      "Event", "Message",
+      // 븷 추사치 (JPA Audit)
+      "Projection",
+      // 폼 데이터
+      "Form",
     ].join("|") + ")$",
     "i",
   );
