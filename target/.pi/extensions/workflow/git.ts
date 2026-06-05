@@ -41,8 +41,39 @@ export function getBranch(root: string): string {
  * hook-common.sh의 is_unimportant_file 패턴과 동일한 제외 규칙 적용.
  */
 export function getUntestedClasses(root: string): string[] {
-  const EXCLUDE_SUFFIX =
-    /(DTO|Dto|Request|Response|Config|Configuration|Application|Properties|Exception|Error|Enum|Record|Constants|Client|Publisher|Checker|Aspect|Controller|Result|Entity|Converter|Mapper|Listener|Interceptor|Filter|Handler|Adapter|Factory|Builder)$/i;
+  const EXCLUDE_SUFFIX = new RegExp(
+    "(" + [
+      // JPA / 데이터 컨테이너
+      "Entity", "Dto", "VO", "Vo",
+      // API 경계
+      "Request", "Response", "Payload", "Command", "Query",
+      // Spring 설정
+      "Config", "Configuration", "Application", "Properties", "Settings",
+      // 웹 레이어 (통합테스트로 커버)
+      "Controller", "RestController", "Advice", "Resolver",
+      // 인프라 / 이벤트
+      "Client", "Publisher", "Subscriber", "Consumer", "Producer",
+      "Listener", "EventListener", "Event",
+      // AOP / 필터 체인
+      "Interceptor", "Filter", "Handler", "Aspect",
+      // 예외 / 타입
+      "Exception", "Error", "Enum", "Record", "Constants", "Constant",
+      // 스케줄링
+      "Scheduler", "Job", "Task",
+      // 변환 / 매핑
+      "Converter", "Mapper", "Serializer", "Deserializer", "Transformer",
+      // 디자인 패턴 구조체
+      "Factory", "Builder", "Adapter", "Proxy", "Decorator", "Wrapper",
+      "Provider", "Registry", "Holder", "Context",
+      // 조회 보조
+      "Specification", "Criteria", "Projection", "Checker",
+      // 응답 래퍼
+      "Result", "Info", "Detail", "Summary", "Form",
+      // 기타 Spring
+      "Monitor", "Watcher",
+    ].join("|") + ")$",
+    "i",
+  );
   const EXCLUDE_PREFIX = /^Q[A-Z]|^Migration/;
 
   try {
