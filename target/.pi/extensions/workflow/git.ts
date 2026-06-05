@@ -42,7 +42,7 @@ export function getBranch(root: string): string {
  */
 export function getUntestedClasses(root: string): string[] {
   const EXCLUDE_SUFFIX =
-    /(DTO|Request|Response|Config|Configuration|Application|Properties|Exception|Error|Enum|Record|Constants|Client|Publisher|Checker|Aspect|Controller|Result)$/;
+    /(DTO|Dto|Request|Response|Config|Configuration|Application|Properties|Exception|Error|Enum|Record|Constants|Client|Publisher|Checker|Aspect|Controller|Result|Entity|Converter|Mapper|Listener|Interceptor|Filter|Handler|Adapter|Factory|Builder)$/i;
   const EXCLUDE_PREFIX = /^Q[A-Z]|^Migration/;
 
   try {
