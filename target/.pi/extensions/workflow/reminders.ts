@@ -102,6 +102,8 @@ function scanVerificationItems(root: string, phase: string, signals: ReminderRun
   if (phase !== "commit") return [];
   const changed = changedFiles(root);
   if (changed.length === 0) return [];
+  // code quality gate를 이미 통과했으면 재검증 불필요
+  if (signals.codeQualityGuardSatisfied) return [];
   const recent = (signals.recentVerificationCommands ?? []).filter((item) => Date.now() - item.timestamp < 2 * 60 * 60_000);
   if (recent.length > 0) return [];
   return [
