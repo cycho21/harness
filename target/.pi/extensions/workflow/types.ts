@@ -38,6 +38,8 @@ export type WorkflowInstance = {
   startedAt: number;
   updatedAt: number;
   guardTokens?: PersistedGuardTokens;
+  /** implement 시작 시점의 미테스트 클래스 목록. implement→code_review 전환 시 TDD 첨종 여부 판단에 사용. */
+  untestedClassesSnapshot?: string[];
 };
 
 export type DpaaReport = {

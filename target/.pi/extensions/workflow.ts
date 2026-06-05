@@ -864,6 +864,26 @@ Risk level: ${spec.riskLevel}`,
 
       const workflowId = state.workflow.id;
 
+      // implement → code_review: TDD 첨종 검증
+      if (state.workflow.phase === "implement") {
+        const tddRoot = state.workflow.gitRoot ?? getGitRoot();
+        const snapshot = state.workflow.untestedClassesSnapshot;
+        if (tddRoot && snapshot) {
+          const currentUntested = getUntestedClasses(tddRoot);
+          const newlyUntested = currentUntested.filter((cls) => !snapshot.includes(cls));
+          if (newlyUntested.length > 0) {
+            await steerLlm(
+              `🧪 TDD 마준수 필요 — implement 중 테스트 없는 클래스가 생겼습니다. 테스트 작성 후 workflow_approve를 다시 호출하세요.\n\n` +
+              newlyUntested.map((c) => `- ${c}`).join("\n"),
+            );
+            return {
+              content: [{ type: "text", text: `TDD 미준수 (${newlyUntested.length}개 클래스). 테스트를 먼저 작성하세요.` }],
+              details: { ok: false, reason: "tdd-violation", classes: newlyUntested },
+            };
+          }
+        }
+      }
+
       // implement → code_review: quality gate 자동 검증
       if (state.workflow.phase === "implement") {
         const gitRoot = state.workflow.gitRoot ?? getGitRoot();
@@ -919,6 +939,12 @@ Risk level: ${spec.riskLevel}`,
           state.dpaaGuardSatisfiedToken = { workflowId, issuedAt: Date.now(), reason: "user_approved", planSha256: dpaaTx?.planSha256 };
           persistGuardToken(HARNESS_TOKEN_TYPES.DPAA, state.dpaaGuardSatisfiedToken as unknown as Record<string, unknown>);
           state.gateFailures.delete("dpaa");
+          // implement 시작 시점의 미테스트 클래스 snapshot 저장 (TDD 체크용)
+          const implRoot = state.workflow?.gitRoot ?? getGitRoot();
+          if (implRoot && state.workflow) {
+            state.workflow.untestedClassesSnapshot = getUntestedClasses(implRoot);
+            saveWorkflow(state.workflow);
+          }
         }
         if (t.from === "code_review" && t.to === "review_approved") {
           state.codeQualityGuardSatisfiedToken = { workflowId, issuedAt: Date.now(), reason: "automated_review_passed" };
