@@ -149,10 +149,11 @@ export default function (pi: ExtensionAPI) {
     if (state.workflow) saveGuardTokensToState(state.workflow);
   }
 
-  /** LLM에게 교정 지시를 주입합니다. 사용자에게 묻지 않고 LLM이 스스로 수정하도록 유도합니다. */
-  async function steerLlm(message: string): Promise<void> {
+  /** LLM에게 교정 지시를 주입합니다. 사용자에게 묻지 않고 LLM이 스스로 수정하도록 유도합니다.
+   * @param deliverAs "followUp"(기본): 현재 응답 완료 후 전달. "steer": 현재 tool call 직후 즉시 개입. */
+  async function steerLlm(message: string, deliverAs: "followUp" | "steer" = "followUp"): Promise<void> {
     try {
-      await (pi as any).sendUserMessage(message, { deliverAs: "followUp" });
+      await (pi as any).sendUserMessage(message, { deliverAs });
     } catch { /* non-fatal */ }
   }
 
@@ -2023,7 +2024,7 @@ Risk level: ${spec.riskLevel}`,
         // 실제 write는 허용 (능력 제한 없음)
       }
 
-      // Phase write-path policy: restrict which paths may be written per phase
+      // Phase write-path policy: 경로 위반 시 steer로 교정 유도 (hard block 대신)
       const pathPolicy = getPhaseWritePathPolicy(state.workflow.phase);
       if (pathPolicy) {
         const filePath = String((event.input as any).path ?? "");
@@ -2034,16 +2035,10 @@ Risk level: ${spec.riskLevel}`,
             : filePath.replace(/\\/g, "/");
           if (isWritePathBlocked(relPath, pathPolicy)) {
             const hint = pathPolicy.mode === "deny"
-              ? `소스 코드 파일은 ${state.workflow.phase} 페이즈에서 수정할 수 없습니다. 문서 첑(마크다운, HTML, 샘플 등)에 대한 변경만 허용됩니다.`
-              : `허용된 경로: ${pathPolicy.patterns.join(", ")}.`;
-            return {
-              block: true,
-              reason: [
-                `⚠️ Phase path policy blocked: ${event.toolName} to "${filePath}" is not allowed in ${state.workflow.phase} phase.`,
-                hint,
-                `HARNESS_WRITE_PATH_POLICY 환경 변수로 정책 오버라이드 가능.`,
-              ].join("\n"),
-            };
+              ? `${state.workflow.phase} 페이즈에서는 문서(마크다운, HTML 등)만 작성할 수 있습니다. 소스 코드 수정이 필요하다면 implement 페이즈로 돌아가세요.`
+              : `이 페이즈에서 허용된 경로: ${pathPolicy.patterns.join(", ")}.`;
+            void steerLlm(`⚠️ ${hint}`);
+            // write는 허용 — 능력 제한 없이 방향만 교정
           }
         }
       }
@@ -2124,19 +2119,15 @@ Risk level: ${spec.riskLevel}`,
           command: cmd,
           improvementKind: "workflow-rule",
         });
+        // block + steer: LLM이 올바른 페이즈 진입 방법을 알 수 있도록 교정 지시 주입
+        void steerLlm(
+          `🚦 git push는 push 페이즈에서만 실행할 수 있습니다. 현재 페이즈: ${state.workflow.phase}.\n` +
+          `workflow_approve를 호출해 단계를 진행하고, commit → push 전환 후 다시 시도하세요.`,
+          "steer",
+        );
         return {
           block: true,
-          reason: [
-            "── 🚦 WORKFLOW PHASE REQUIRED ────────",
-            "",
-            "  git push is allowed only during the push phase.",
-            "  Complete review/document/commit deliverables, then use the workflow yes/no approval dialog to enter push.",
-            "",
-            `  Current phase: ${state.workflow.phase}`,
-            "  Required phase: push",
-            "",
-            "──────────────────────────────────────",
-          ].join("\n"),
+          reason: `git push blocked: current phase is "${state.workflow.phase}", required phase is "push". workflow_approve로 단계를 진행하세요.`,
         };
       }
 
