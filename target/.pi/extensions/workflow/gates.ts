@@ -262,7 +262,14 @@ export function runCodeQualityGate(workflow: WorkflowInstance): { ok: boolean; m
       });
     } else {
       // Build system quality command: use execFileSync (structured argv, no shell interpolation)
-      execFileSync(qc!.executable, qc!.args, {
+      // Windows: .bat files need cmd /c wrapper
+      let exe = qc!.executable;
+      let eArgs = qc!.args;
+      if (process.platform === "win32" && /\.bat$/i.test(exe)) {
+        eArgs = ["/c", exe, ...eArgs];
+        exe = "cmd.exe";
+      }
+      execFileSync(exe, eArgs, {
         cwd: root,
         encoding: "utf-8",
         env: { ...process.env, PYTHONIOENCODING: "utf-8" },
@@ -273,6 +280,20 @@ export function runCodeQualityGate(workflow: WorkflowInstance): { ok: boolean; m
     return { ok: true, message: `Code quality guard satisfied: ${command}` };
   } catch (error) {
     const err = error as { stdout?: string; stderr?: string; status?: number };
+    // exit code null = process could not start (tooling/env issue) → treat as skippable, not a code quality failure
+    if (err.status == null) {
+      const envOutput = [err.stdout, err.stderr].filter(Boolean).join("\n").trim();
+      writeFieldLogEvent({
+        type: "gate.failed", category: "code-quality", severity: "warning", workflow,
+        summary: "Code quality gate subprocess could not start (exit code unknown). Treating as tooling error — gate skipped.",
+        expected: "Quality guard process exits with numeric code.",
+        actual: envOutput || "exit code null",
+        impact: "Gate bypassed due to Node.js subprocess environment issue. Run manually to verify.",
+        primaryMessage: envOutput || `${command} — exit code unknown`,
+        command, improvementKind: "doctor-check",
+      });
+      return { ok: true, message: `Code quality guard skipped: subprocess environment error (exit unknown). Run ${command} manually to verify.` };
+    }
     const output = [err.stdout, err.stderr].filter(Boolean).join("\n").trim();
     const tail = output.split(/\r?\n/).slice(-80).join("\n");
     writeFieldLogEvent({

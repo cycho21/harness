@@ -489,10 +489,16 @@ export function runCatalogCommand(
     args = ["-m", "dpaa.cli", ...args];
   }
 
-  // Windows: .bat files must be run through cmd.exe
+  // Windows: .bat files must be run through cmd.exe (execFileSync cannot execute .bat directly)
   if (process.platform === "win32" && /\.bat$/i.test(executable)) {
     args = ["/c", executable, ...args];
     executable = "cmd.exe";
+  }
+  // Windows: shell scripts need explicit sh/bash
+  if (process.platform === "win32" && /[/\\]gradlew$/.test(executable)) {
+    const sh = process.env.ComSpec ?? "cmd.exe";
+    args = ["/c", executable, ...args];
+    executable = sh;
   }
 
   let output = "";
