@@ -2043,22 +2043,26 @@ Risk level: ${spec.riskLevel}`,
     const extensionApproval = await ensureExtensionMutationApproved(event.toolName, event.input, ctx);
     if (!extensionApproval.ok) return { block: true, reason: extensionApproval.reason };
 
-    // TDD gate: implement 페이즈에서 생성 확인 — test-first 시행
-    if (state.workflow?.phase === "implement" && event.toolName === "write") {
+    // TDD gate: implement 페이즈에서 test-first 시행
+    if (state.workflow?.phase === "implement" && (event.toolName === "write" || event.toolName === "edit")) {
       const filePath = String((event.input as any).path ?? "");
       const gitRoot = state.workflow.gitRoot ?? getGitRoot();
-      if (gitRoot && isProductionClassPath(filePath, gitRoot) && !fs.existsSync(path.resolve(filePath))) {
+      if (gitRoot && isProductionClassPath(filePath, gitRoot)) {
         const className = path.basename(filePath, ".java");
         const testPath = filePath
           .replace(/[\\/]src[\\/]main[\\/]java[\\/]/, "/src/test/java/".replace(/\//g, path.sep))
           .replace(/\.java$/, "Test.java");
-        if (!fs.existsSync(path.resolve(testPath))) {
+        const isNewFile = !fs.existsSync(path.resolve(filePath));
+        const testExists = fs.existsSync(path.resolve(testPath));
+        if (!testExists) {
           return {
             block: true,
             reason: [
               `🧪 TDD: ${className}Test.java를 먼저 작성하세요.`,
+              isNewFile
+                ? `새 클래스를 작성하기 전에 테스트를 먼저 작성하세요.`
+                : `이 클래스에 대한 테스트 파일이 없습니다. 테스트를 먼저 작성하세요.`,
               `예상 테스트 경로: ${testPath}`,
-              `테스트 파일을 작성한 후 ${className}.java를 다시 작성하세요.`,
             ].join("\n"),
           };
         }
