@@ -57,6 +57,8 @@ harness
 - mechanical reminders 주입
 - extension 수정 시 사용자 승인 요구
 
+Workflow extension 개발 시 `target/.pi/extensions/workflow.ts`는 entrypoint, command/tool 등록, 상위 라우팅만 담당하도록 유지합니다. 새 guard 판단은 `target/.pi/extensions/workflow/gates.ts`, reminder 판단은 `workflow/reminders.ts`, command catalog는 `workflow/catalog.ts`, state/persistence는 `workflow/state.ts`와 `workflow/storage.ts`, UI 로직은 `workflow/ui.ts` 또는 `workflow/interview-ui.ts`에 둡니다. 새 기능을 추가할 때 `workflow.ts`에 업무 로직을 직접 늘리지 말고 먼저 적절한 하위 모듈을 선택합니다.
+
 DPAA와 SBADR은 상호 보완적입니다.
 
 요구사항 수집/강화 인터뷰는 별도 명령으로 제공합니다.
@@ -137,6 +139,12 @@ pi
 
 ```bash
 python -m pytest tests/test_workflow_fake_llm_session.py -q
+```
+
+Workflow guard/reminder/catalog 변경 후에는 최소 smoke test로 최근 회귀가 잦은 영역을 확인합니다. 이 묶음은 Windows `.bat` wrapping, code quality tooling error 처리, reminder 신호, TDD write/edit 감지를 함께 검증합니다.
+
+```bash
+python -m pytest tests/test_workflow_reminders.py tests/test_workflow_run_command.py tests/test_code_quality_gate.py tests/test_workflow_tool_policy.py -q
 ```
 
 기본 설치는 Pi용 전체 설치입니다.

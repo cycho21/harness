@@ -98,8 +98,20 @@ def test_apply_phase_tool_policy_called_on_start():
     assert src.count("applyPhaseToolPolicy") >= 3
 
 
-def test_tool_call_backstop_blocks_write_edit_in_readonly_phases():
+def test_tool_call_backstop_steers_write_edit_in_readonly_phases():
     src = WORKFLOW_EXTENSION.read_text(encoding="utf-8")
     assert "PHASE_ALLOWED_BUILTIN_TOOLS" in src
     assert 'event.toolName === "write"' in src or "event.toolName ===" in src
-    assert "Phase tool policy blocked" in src
+    assert "phaseAllowed && !phaseAllowed.includes(event.toolName)" in src
+    assert "void steerLlm" in src
+
+
+def test_tdd_gate_checks_write_and_edit_calls_in_implement_phase():
+    src = WORKFLOW_EXTENSION.read_text(encoding="utf-8")
+    assert 'state.workflow?.phase === "implement"' in src
+    assert 'event.toolName === "write" || event.toolName === "edit"' in src
+    assert "isProductionClassPath" in src
+    assert "src/test/java" in src
+    assert "Test.java" in src
+    assert "testExists" in src
+    assert "TDD:" in src

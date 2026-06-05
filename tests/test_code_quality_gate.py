@@ -18,6 +18,16 @@ def test_code_quality_gate_runs_before_review_approved():
     assert "Checkstyle/PMD/test failures" in gates
 
 
+def test_code_quality_gate_treats_unknown_exit_as_tooling_error():
+    gates = GATES.read_text(encoding="utf-8")
+
+    assert "err.status == null" in gates
+    assert "exit code unknown" in gates
+    assert "Treating as tooling error" in gates
+    assert "Gate bypassed due to Node.js subprocess environment issue" in gates
+    assert "ok: true" in gates
+
+
 def test_code_quality_gate_has_explicit_skip_and_phase_guidance():
     workflow = WORKFLOW_EXTENSION.read_text(encoding="utf-8")
     fmt = FORMAT.read_text(encoding="utf-8")

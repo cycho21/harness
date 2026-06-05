@@ -79,7 +79,10 @@ class TestWorkflowTsPolicySOT:
         src = _workflow_src()
         assert "sharedWorkflowPhases" in src
         assert "isSharedWorkflowPhase" in src
-        assert "WORKFLOW_PHASES" not in src
+        state_block = src[src.index('if (command === "state")'):]
+        assert "sharedWorkflowPhases" in state_block
+        assert "isSharedWorkflowPhase" in state_block
+        assert "WORKFLOW_PHASES" not in state_block
 
 
 class TestWorkflowTsShadowing:

@@ -87,7 +87,15 @@ def test_no_shell_true_in_exec_file():
     assert "shell: true" not in src
 
 
-def test_auto_executable_resolved_from_filesystem():
+def test_windows_bat_files_are_wrapped_with_cmd_c():
+    src = CATALOG.read_text(encoding="utf-8")
+    assert 'process.platform === "win32"' in src
+    assert '/\\.bat$/i.test(executable)' in src
+    assert 'args = ["/c", executable, ...args];' in src
+    assert 'executable = "cmd.exe";' in src
+
+
+def test_auto_executable_resolved_from_filesystem(): 
     src = CATALOG.read_text(encoding="utf-8")
     # Auto resolution must check gradlew/mvnw on filesystem, not trust user input
     assert "resolveAutoExecutable" in src

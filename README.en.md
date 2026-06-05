@@ -6,6 +6,8 @@ Pi workflow harness source repository.
 
 Pi workflow runtime files are isolated under `target/` so developing the harness from this repository root does not automatically load the harness extension, skills, or context files. The template includes a muted high-visibility theme at `target/.pi/themes/workflow-console.json`; in an initialized project it is installed as `.pi/themes/workflow-console.json` and can be selected as `workflow-console` in Pi's `/settings`. In an initialized project, `AGENTS.md`, `.pi/`, and optional Claude Code workflow-gate files under `.claude/` and `.harness/` are placed at the project root. Claude Code and Pi share workflow policy declarations through `.harness/workflow-policy.json` while keeping runtime-specific adapters separate.
 
+When developing the workflow extension, keep `target/.pi/extensions/workflow.ts` limited to the entrypoint, command/tool registration, and top-level routing. Put new guard decisions in `target/.pi/extensions/workflow/gates.ts`, reminder decisions in `workflow/reminders.ts`, command catalog logic in `workflow/catalog.ts`, state/persistence in `workflow/state.ts` and `workflow/storage.ts`, and UI logic in `workflow/ui.ts` or `workflow/interview-ui.ts`. When adding a feature, choose the appropriate submodule before adding business logic to `workflow.ts`.
+
 ## Initialize in another project
 
 From the target project's directory, run the one-liner for your OS.
@@ -40,6 +42,12 @@ The source repo test suite includes a fake LLM action-loop test that drives the 
 
 ```bash
 python -m pytest tests/test_workflow_fake_llm_session.py -q
+```
+
+After workflow guard/reminder/catalog changes, run the minimum smoke test for recently fragile areas. This bundle covers Windows `.bat` wrapping, code quality tooling-error handling, reminder signals, and TDD write/edit detection.
+
+```bash
+python -m pytest tests/test_workflow_reminders.py tests/test_workflow_run_command.py tests/test_code_quality_gate.py tests/test_workflow_tool_policy.py -q
 ```
 
 DPAA dependencies are installed automatically into `.pi/.venv/` the first time the DPAA gate runs. The generated venv is ignored by `.pi/.gitignore`.

@@ -28,7 +28,7 @@ def _run_node(script: str, tmp_path: Path) -> dict:
     return json.loads(result.stdout)
 
 
-def test_documentation_verification_and_commit_summary_reminders_are_injected_in_commit_phase(tmp_path):
+def test_documentation_and_commit_summary_reminders_are_injected_in_commit_phase(tmp_path):
     project = tmp_path / "project"
     docs = project / "docs" / "feat"
     docs.mkdir(parents=True)
@@ -64,11 +64,47 @@ def test_documentation_verification_and_commit_summary_reminders_are_injected_in
     assert "docs/feat/html/payment-timeout.html is missing" in data["prompt"]
     assert "docs/feat/INDEX.md is missing" in data["prompt"]
     assert "docs/feat/html/index.html is missing" in data["prompt"]
-    assert "Verification:" in data["prompt"]
-    assert "No recent test/lint/typecheck/build/codeQualityGuard command was observed" in data["prompt"]
+    assert "Verification:" not in data["prompt"]
+    assert "No recent test/lint/typecheck/build/codeQualityGuard command was observed" not in data["prompt"]
     assert "Commit Summary:" in data["prompt"]
     assert "Provide a concise diff summary" in data["prompt"]
+    assert "Cause:" in data["prompt"]
+    assert "Required action:" in data["prompt"]
+    assert "Do not:" in data["prompt"]
+    assert "Pass condition:" in data["prompt"]
     assert "explicitly state why" in data["prompt"]
+
+
+def test_verification_reminder_disappears_when_code_quality_guard_is_satisfied(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    subprocess.run(["git", "init"], cwd=project, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (project / "src.txt").write_text("changed\n", encoding="utf-8")
+
+    script = textwrap.dedent(
+        rf'''
+        const path = require('path');
+        const {{ createJiti }} = require('jiti');
+        process.chdir({json.dumps(str(project))});
+
+        const reminders = {json.dumps(str(ROOT / "target" / ".pi" / "extensions" / "workflow" / "reminders.ts"))};
+        const jiti = createJiti(path.resolve('runtime-test.js'), {{ interopDefault: false }});
+        const {{ scanWorkflowReminders }} = jiti(reminders);
+        const workflow = {{ id: 'wf-test', title: 'Reminder test', phase: 'commit', gitRoot: {json.dumps(str(project))}, history: [] }};
+
+        const withoutQuality = scanWorkflowReminders(workflow, {{}});
+        const withQuality = scanWorkflowReminders(workflow, {{ codeQualityGuardSatisfied: true }});
+        console.log(JSON.stringify({{
+          withoutQuality: withoutQuality?.sections.map((section) => section.title) ?? [],
+          withQuality: withQuality?.sections.map((section) => section.title) ?? [],
+        }}));
+        '''
+    )
+    data = _run_node(script, tmp_path)
+
+    assert "Verification" in data["withoutQuality"]
+    assert "Verification" not in data["withQuality"]
+    assert "Commit Summary" in data["withQuality"]
 
 
 def test_verification_reminder_disappears_after_observed_test_command(tmp_path):
