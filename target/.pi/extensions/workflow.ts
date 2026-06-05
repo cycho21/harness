@@ -250,6 +250,18 @@ export default function (pi: ExtensionAPI) {
     if (marker && state.workflowContinuationPending?.marker === marker) state.workflowContinuationPending = null;
   }
 
+  function clearActiveWorkflowAfterCompletion(): void {
+    cancelWorkflowContinuationPending();
+    state.workflow = null;
+    state.dpaaGuardSatisfiedToken = null;
+    state.codeQualityGuardSatisfiedToken = null;
+    state.codeReviewGuardSatisfiedToken = null;
+    state.pushExecutionGuardSatisfiedToken = null;
+    state.reviewPackageToken = null;
+    state.policyApprovals = [];
+    state.gateFailures = new Map();
+  }
+
   function shouldSendWorkflowContinuation(workflow: WorkflowInstance, transitions: Array<{ from: WorkflowPhase; to: WorkflowPhase }> | undefined): boolean {
     if (!transitions?.some((item) => isSharedAutoAdvancePhase(item.from))) return false;
     return ["plan_review", "code_review", "commit"].includes(workflow.phase);
@@ -752,11 +764,16 @@ Risk level: ${spec.riskLevel}`,
         }
       });
 
+      const completed = transitions.some((t) => t.to === "done");
+      if (completed) {
+        clearActiveWorkflowAfterCompletion();
+        applyPhaseToolPolicy(null);
+      }
       refreshBoard(ctx);
       refreshStatus(ctx);
       return {
-        content: [{ type: "text", text: result.message + "\n\n" + formatWorkflowAction(state.workflow) }],
-        details: { ok: true, transitions: transitions.map((t) => `${t.from} → ${t.to}`) },
+        content: [{ type: "text", text: completed ? result.message : result.message + "\n\n" + formatWorkflowAction(state.workflow) }],
+        details: { ok: true, transitions: transitions.map((t) => `${t.from} → ${t.to}`), completed },
       };
     },
 
@@ -1437,9 +1454,15 @@ Risk level: ${spec.riskLevel}`,
           persistGuardToken(HARNESS_TOKEN_TYPES.PUSH_EXECUTION, state.pushExecutionGuardSatisfiedToken as unknown as Record<string, unknown>);
           notices.push("Push phase approved: commit → push transition evidence recorded in workflow history.");
         }
+        const completed = transitions.some((t) => t.to === "done");
         if (transitionPath) notices.push(`Transition path: ${transitionPath}`);
-        notices.push("", formatWorkflowAction(state.workflow));
-        applyPhaseToolPolicy(state.workflow.phase);
+        if (completed) {
+          clearActiveWorkflowAfterCompletion();
+          applyPhaseToolPolicy(null);
+        } else {
+          notices.push("", formatWorkflowAction(state.workflow));
+          applyPhaseToolPolicy(state.workflow.phase);
+        }
         refreshBoard(ctx);
         refreshStatus(ctx);
         ctx.ui.notify(notices.join("\n"), "info");
@@ -2105,7 +2128,7 @@ Risk level: ${spec.riskLevel}`,
 
     // Restore persisted workflow, guard tokens, and apply tool policy
     const persisted = loadPersistedWorkflow();
-    if (persisted && !state.workflow) {
+    if (persisted && persisted.phase !== "done" && !state.workflow) {
       state.workflow = persisted;
     }
     if (state.workflow) {

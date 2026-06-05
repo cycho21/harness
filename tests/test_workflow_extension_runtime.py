@@ -157,6 +157,43 @@ def test_workflow_extension_runtime_state_outputs_single_llm_action_block(tmp_pa
     assert "manual recovery only" in data["stateNotification"]
 
 
+def test_workflow_extension_runtime_clears_active_workflow_after_done(tmp_path):
+    script = textwrap.dedent(
+        r'''
+        const path = require('path');
+        const { createJiti } = require('jiti');
+        process.chdir('target');
+
+        const pi = { events: {}, commands: {}, tools: {}, on(name, fn) { this.events[name] = fn; }, registerCommand(name, spec) { this.commands[name] = spec; }, registerTool(spec) { this.tools[spec.name] = spec; } };
+        const jiti = createJiti(path.resolve('runtime-test.js'), { interopDefault: false });
+        jiti(path.resolve('.pi/extensions/workflow.ts')).default(pi);
+
+        const notifications = [];
+        const ctx = { hasUI: true, ui: { notify: (text, level) => notifications.push({ text, level }), confirm: async () => true } };
+
+        (async () => {
+          await pi.commands.workflow.handler('start Runtime done cleanup', ctx);
+          await pi.commands.workflow.handler('state push', ctx);
+          await pi.commands.workflow.handler('approve', ctx);
+          await pi.commands.workflow.handler('status', ctx);
+          const prompt = await pi.events.before_agent_start({ systemPrompt: 'base' });
+          console.log(JSON.stringify({
+            notifications: notifications.map((item) => item.text),
+            prompt: prompt.systemPrompt,
+          }));
+        })().catch((error) => { console.error(error.stack || String(error)); process.exit(1); });
+        '''
+    )
+    data = _run_node_runtime(script, tmp_path)
+    joined = "\n".join(data["notifications"])
+
+    assert "Workflow 전이: push → done" in joined
+    assert "No active workflow" in joined
+    assert "Current phase: done" not in data["prompt"]
+    assert "Current phase: push" not in data["prompt"]
+    assert "No active workflow" in data["prompt"]
+
+
 def test_workflow_extension_runtime_auto_advances_low_risk_phase_boundaries(tmp_path):
     script = textwrap.dedent(
         r'''
