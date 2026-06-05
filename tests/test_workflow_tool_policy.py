@@ -107,6 +107,22 @@ def test_tool_call_backstop_steers_write_edit_in_readonly_phases():
     assert "void steerLlm" in src
 
 
+def test_workflow_typo_suggestion_helper_defined_in_runtime_policy():
+    src = RUNTIME_POLICY.read_text(encoding="utf-8")
+    assert "export function suggestWorkflowCommandTypo" in src
+    assert "levenshtein" in src
+    assert "/workflow" in src
+    assert "자동 실행하지 않았습니다" in src
+
+
+def test_stale_steer_marker_has_parse_fallback_after_eviction():
+    src = WORKFLOW_EXTENSION.read_text(encoding="utf-8")
+    assert "consumeStaleWorkflowSteerPrompt" in src
+    assert "marker.split(\":\")" in src
+    assert "pending?.workflowId ?? markerWorkflowId" in src
+    assert "isSharedWorkflowPhase(markerPhase)" in src
+
+
 def test_tdd_gate_checks_write_and_edit_calls_in_implement_phase():
     src = WORKFLOW_EXTENSION.read_text(encoding="utf-8")
     assert 'state.workflow?.phase === "implement"' in src

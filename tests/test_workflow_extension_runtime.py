@@ -463,3 +463,81 @@ def test_workflow_extension_runtime_blocks_failed_code_quality_guard(tmp_path):
     assert "CODE QUALITY GATE BLOCKED" in joined
     assert "Mechanical code quality guard failed" in joined
     assert "code_review → review_approved" in joined
+
+
+def test_workflow_typo_suggestion_for_near_miss_slash_command(tmp_path):
+    script = textwrap.dedent(
+        r'''
+        const path = require('path');
+        const { createJiti } = require('jiti');
+        process.chdir('target');
+
+        const pi = { events: {}, commands: {}, tools: {}, on(name, fn) { this.events[name] = fn; }, registerCommand(name, spec) { this.commands[name] = spec; }, registerTool(spec) { this.tools[spec.name] = spec; } };
+        const jiti = createJiti(path.resolve('runtime-test.js'), { interopDefault: false });
+        jiti(path.resolve('.pi/extensions/workflow.ts')).default(pi);
+
+        const notifications = [];
+        const ctx = { hasUI: true, ui: { notify: (text, level) => notifications.push({ text, level }), confirm: async () => true } };
+
+        (async () => {
+          const typo = await pi.events.input({ source: 'interactive', text: '/workflot abort' }, ctx);
+          const valid = await pi.events.input({ source: 'interactive', text: '/workflow status' }, ctx);
+          const prose = await pi.events.input({ source: 'interactive', text: 'workflow looks good' }, ctx);
+          console.log(JSON.stringify({ typo, valid, prose, notifications: notifications.map((item) => item.text) }));
+        })().catch((error) => { console.error(error.stack || String(error)); process.exit(1); });
+        '''
+    )
+    data = _run_node_runtime(script, tmp_path)
+
+    assert data["typo"]["action"] == "handled"
+    assert data["valid"]["action"] == "continue"
+    assert data["prose"]["action"] == "continue"
+    assert any("/workflow abort" in item for item in data["notifications"])
+    assert all("workflow looks good" not in item for item in data["notifications"])
+
+
+def test_stale_phase_steer_message_is_consumed_after_phase_changes(tmp_path):
+    script = textwrap.dedent(
+        r'''
+        const path = require('path');
+        const { createJiti } = require('jiti');
+        process.chdir('target');
+
+        const sentMessages = [];
+        const pi = {
+          events: {}, commands: {}, tools: {},
+          on(name, fn) { this.events[name] = fn; },
+          registerCommand(name, spec) { this.commands[name] = spec; },
+          registerTool(spec) { this.tools[spec.name] = spec; },
+          sendUserMessage(text, options) { sentMessages.push({ text, options }); },
+          getAllTools() { return [
+            { name: 'read', sourceInfo: { source: 'builtin' } },
+            { name: 'write', sourceInfo: { source: 'builtin' } },
+            { name: 'edit', sourceInfo: { source: 'builtin' } },
+            { name: 'bash', sourceInfo: { source: 'builtin' } },
+            ...Object.keys(this.tools).map((name) => ({ name, sourceInfo: { source: 'extension' } })),
+          ]; },
+          setActiveTools(names) { this.activeTools = names; },
+        };
+        const jiti = createJiti(path.resolve('runtime-test.js'), { interopDefault: false });
+        jiti(path.resolve('.pi/extensions/workflow.ts')).default(pi);
+
+        const ctx = { hasUI: true, hasPendingMessages: () => false, isIdle: () => false, ui: { notify: () => {}, confirm: async () => true, select: async (_m, options) => options[0], setStatus: () => {}, setWidget: () => {} } };
+
+        (async () => {
+          await pi.commands.workflow.handler('start stale steer workflow', ctx);
+          await pi.commands.workflow.handler('approve', ctx);
+          await pi.events.tool_call({ toolName: 'edit', input: { path: 'src/app.txt', edits: [] } }, ctx);
+          const staleText = sentMessages.find((item) => item.text.includes('plan_review 페이즈')).text;
+          await pi.commands.workflow.handler('skip dpaa stale steer test', ctx);
+          await pi.commands.workflow.handler('approve', ctx);
+          const consumed = await pi.events.input({ source: 'extension', text: staleText }, ctx);
+          console.log(JSON.stringify({ consumed, staleText, phaseTools: pi.activeTools }));
+        })().catch((error) => { console.error(error.stack || String(error)); process.exit(1); });
+        '''
+    )
+    data = _run_node_runtime(script, tmp_path)
+
+    assert data["consumed"]["action"] == "handled"
+    assert "harness-workflow-steer" in data["staleText"]
+    assert "write" in data["phaseTools"]

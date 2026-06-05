@@ -187,6 +187,20 @@ def test_format_workflow_board_defined():
     assert "export function formatWorkflowBoard" in src
 
 
+def test_automatic_chain_display_guidance_is_explicit():
+    src = FORMAT.read_text(encoding="utf-8")
+    assert "User-visible next stop" in src
+    assert "planning in progress" in src
+    assert "plan_review awaiting plan approval" in src
+
+
+def test_code_review_guidance_prefers_async_subagent_review():
+    src = FORMAT.read_text(encoding="utf-8")
+    assert "Prefer async subagent review" in src
+    assert "foreground timeouts" in src
+    assert "submit_review_package" in src
+
+
 def test_workflow_board_state_type_exported():
     src = FORMAT.read_text(encoding="utf-8")
     assert "WorkflowBoardState" in src

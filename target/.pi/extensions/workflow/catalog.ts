@@ -20,6 +20,7 @@ export type BuildSystemType =
   | "go"
   | "cargo"
   | "make"
+  | "harness"
   | "unknown";
 
 export type BuildSystemInfo = {
@@ -42,6 +43,16 @@ function hasMakeTarget(makeRoot: string, target: string): boolean {
 
 export function detectBuildSystem(root: string): BuildSystemInfo {
   const exists = (f: string) => fs.existsSync(path.join(root, f));
+
+  // Harness source repository (this project has no root build file; target/.pi is the deployable source)
+  if (exists("AGENTS.md") && exists("target/.pi/extensions/workflow.ts") && exists("tests/test_workflow_extension_runtime.py")) {
+    return {
+      type: "harness",
+      testCommand: { executable: "python", args: ["-m", "pytest", "tests"] },
+      buildCommand: null,
+      qualityCommand: { executable: "python", args: ["-m", "pytest", "tests"] },
+    };
+  }
 
   // Gradle (Java/Kotlin)
   if (exists("gradlew") || exists("gradlew.bat") || exists("build.gradle") || exists("build.gradle.kts")) {

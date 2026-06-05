@@ -76,6 +76,7 @@ export function formatWorkflowAction(workflow: WorkflowInstance | null): string 
       lines.push(
         "- Transition mode: automatic preparation chain.",
         "- Required now: clarify requirements, record interview artifacts, then advance through plan to plan_review when ready.",
+        "- User-visible next stop after the automatic preparation chain: plan_review awaiting plan approval.",
         "- Do not request user approval before plan_review.",
       );
       break;
@@ -83,6 +84,7 @@ export function formatWorkflowAction(workflow: WorkflowInstance | null): string 
       lines.push(
         "- Transition mode: automatic preparation chain.",
         "- Required now: produce/update the plan and DPAA/SBADR-ready artifacts, then advance to plan_review.",
+        "- User-visible state: planning in progress; next stop is plan_review for explicit approval.",
         "- Do not implement until plan_review approval is received.",
       );
       break;
@@ -106,6 +108,7 @@ export function formatWorkflowAction(workflow: WorkflowInstance | null): string 
       lines.push(
         "- Transition mode: mechanical review gate, not a simple user-approval boundary.",
         "- Required now: run main self-review, independent reviewer/subagent review, and quality gates.",
+        "- Prefer async subagent review for independent review so foreground timeouts do not block the main workflow; incorporate the completed async result into submit_review_package.",
         "- Submit submit_review_package; stay in code_review for review fixes until the package and gates pass.",
       );
       break;

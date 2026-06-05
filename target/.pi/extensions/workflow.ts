@@ -110,11 +110,13 @@ import {
   applyPhaseToolPolicyForHost,
   formatExtensionMutationApprovalReason,
   requiresExtensionMutationApproval,
+  suggestWorkflowCommandTypo,
 } from "./workflow/runtime-policy";
 
 // This file lives at: <harness-root>/.pi/extensions/workflow.ts
 const HARNESS_ROOT = path.resolve(__dirname, "../..");
 const WORKFLOW_CONTINUATION_MARKER_PREFIX = "harness-workflow-continuation:";
+const WORKFLOW_STEER_MARKER_PREFIX = "harness-workflow-steer:";
 
 export default function (pi: ExtensionAPI) {
   // ── In-memory state ────────────────────────────────────────────────────────
@@ -133,7 +135,20 @@ export default function (pi: ExtensionAPI) {
   /** LLM에게 교정 지시를 주입합니다. 사용자에게 묻지 않고 LLM이 스스로 수정하도록 유도합니다.
    * @param deliverAs "followUp"(기본): 현재 응답 완료 후 전달. "steer": 현재 tool call 직후 즉시 개입. */
   async function steerLlm(message: string, deliverAs: "followUp" | "steer" = "followUp"): Promise<void> {
-    try { await (pi as any).sendUserMessage(message, { deliverAs }); } catch { /* non-fatal */ }
+    try {
+      const workflow = state.workflow;
+      if (!workflow) {
+        await (pi as any).sendUserMessage(message, { deliverAs });
+        return;
+      }
+      const marker = `${workflow.id}:${workflow.phase}:${Date.now()}`;
+      state.pendingSteerMessages.set(marker, { workflowId: workflow.id, phase: workflow.phase, marker, issuedAt: Date.now() });
+      if (state.pendingSteerMessages.size > 20) {
+        const oldest = state.pendingSteerMessages.keys().next().value;
+        if (oldest) state.pendingSteerMessages.delete(oldest);
+      }
+      await (pi as any).sendUserMessage([message, workflowSteerMarkerComment(marker)].join("\n"), { deliverAs });
+    } catch { /* non-fatal */ }
   }
 
   /**
@@ -182,9 +197,21 @@ export default function (pi: ExtensionAPI) {
     return `<!-- ${WORKFLOW_CONTINUATION_MARKER_PREFIX}${marker} -->`;
   }
 
-  function extractWorkflowContinuationMarker(text: string): string | undefined {
-    const escaped = WORKFLOW_CONTINUATION_MARKER_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  function workflowSteerMarkerComment(marker: string): string {
+    return `<!-- ${WORKFLOW_STEER_MARKER_PREFIX}${marker} -->`;
+  }
+
+  function extractWorkflowMarker(text: string, prefix: string): string | undefined {
+    const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     return new RegExp(`<!--\\s*${escaped}([^\\s>]+)\\s*-->`).exec(text)?.[1];
+  }
+
+  function extractWorkflowContinuationMarker(text: string): string | undefined {
+    return extractWorkflowMarker(text, WORKFLOW_CONTINUATION_MARKER_PREFIX);
+  }
+
+  function extractWorkflowSteerMarker(text: string): string | undefined {
+    return extractWorkflowMarker(text, WORKFLOW_STEER_MARKER_PREFIX);
   }
 
   function cancelWorkflowContinuationPending(): void {
@@ -201,6 +228,20 @@ export default function (pi: ExtensionAPI) {
   function consumeCancelledWorkflowContinuationPrompt(text: string): boolean {
     const marker = extractWorkflowContinuationMarker(text);
     return marker ? state.cancelledWorkflowContinuationMarkers.delete(marker) : false;
+  }
+
+  function consumeStaleWorkflowSteerPrompt(text: string): boolean {
+    const marker = extractWorkflowSteerMarker(text);
+    if (!marker) return false;
+    const pending = state.pendingSteerMessages.get(marker);
+    const [markerWorkflowId, markerPhase] = marker.split(":");
+    const expectedWorkflowId = pending?.workflowId ?? markerWorkflowId;
+    const expectedPhase = pending?.phase ?? (isSharedWorkflowPhase(markerPhase) ? markerPhase : null);
+    if (!expectedWorkflowId || !expectedPhase) return false;
+    const current = state.workflow;
+    const isStale = !current || current.id !== expectedWorkflowId || current.phase !== expectedPhase;
+    state.pendingSteerMessages.delete(marker);
+    return isStale;
   }
 
   function markWorkflowContinuationDelivered(text: string | undefined): void {
@@ -240,6 +281,10 @@ export default function (pi: ExtensionAPI) {
     const marker = workflowContinuationMarker(workflow);
     state.workflowContinuationPending = { workflowId: workflow.id, phase: workflow.phase, marker };
     try {
+      if (state.workflow?.id !== workflow.id || state.workflow.phase !== workflow.phase) {
+        state.workflowContinuationPending = null;
+        return;
+      }
       const prompt = buildWorkflowContinuationPrompt(workflow, marker);
       const options = ctx.isIdle?.() ? undefined : { deliverAs: "followUp" };
       await (piApi as any).sendUserMessage(prompt, options);
@@ -1731,8 +1776,16 @@ Risk level: ${spec.riskLevel}`,
 
   // ── User-input checkpoint prompt + natural approval handling ───────────────
   pi.on("input", async (event, ctx) => {
-    if (event.source === "extension" && consumeCancelledWorkflowContinuationPrompt(event.text)) {
+    if (event.source === "extension" && (consumeCancelledWorkflowContinuationPrompt(event.text) || consumeStaleWorkflowSteerPrompt(event.text))) {
       return { action: "handled" };
+    }
+
+    if (event.source === "interactive") {
+      const suggestion = suggestWorkflowCommandTypo(event.text);
+      if (suggestion) {
+        ctx.ui.notify(suggestion, "warning");
+        return { action: "handled" };
+      }
     }
 
     // Natural-language workflow approvals are accepted only from text the user
@@ -2043,6 +2096,7 @@ Risk level: ${spec.riskLevel}`,
       state.pushExecutionGuardSatisfiedToken = null;
       state.reviewPackageToken = null;
       state.policyApprovals = [];
+      state.pendingSteerMessages.clear();
       state.gateFailures = new Map();
       applyPhaseToolPolicy(null);
       ctx.ui.notify("Workflow guard state cleared for forked session. Use /workflow load if the workflow should continue in this fork.", "info");

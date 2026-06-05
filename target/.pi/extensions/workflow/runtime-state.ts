@@ -6,6 +6,13 @@ export type WorkflowContinuationPending = {
   marker: string;
 };
 
+export type WorkflowSteerMessage = {
+  workflowId: string;
+  phase: WorkflowPhase;
+  marker: string;
+  issuedAt: number;
+};
+
 export type WorkflowRuntimeState = {
   codeReviewGuardSatisfiedToken: {
     critical: number;
@@ -25,6 +32,7 @@ export type WorkflowRuntimeState = {
   recentVerificationCommands: Array<{ command: string; timestamp: number; phase?: string }>;
   reviewPackageToken: null | { workflowId: string; timestamp: number; critical: number; major: number; minor: number; mainSummary: string; reviewerSummary: string; qualitySummary: string };
   workflowContinuationPending: WorkflowContinuationPending | null;
+  pendingSteerMessages: Map<string, WorkflowSteerMessage>;
   cancelledWorkflowContinuationMarkers: Set<string>;
   activeEditScope: EditScope | null;
 };
@@ -52,6 +60,7 @@ export function createWorkflowRuntimeState(): WorkflowRuntimeState {
     recentVerificationCommands: [],
     reviewPackageToken: null,
     workflowContinuationPending: null,
+    pendingSteerMessages: new Map<string, WorkflowSteerMessage>(),
     cancelledWorkflowContinuationMarkers: new Set<string>(),
     activeEditScope: null,
   };

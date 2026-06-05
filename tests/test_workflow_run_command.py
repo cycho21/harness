@@ -102,6 +102,15 @@ def test_auto_executable_resolved_from_filesystem():
     assert "gradlew" in src
 
 
+def test_harness_repo_quality_command_detected():
+    src = CATALOG.read_text(encoding="utf-8")
+    assert 'type: "harness"' in src
+    assert 'target/.pi/extensions/workflow.ts' in src
+    assert 'tests/test_workflow_extension_runtime.py' in src
+    assert '"-m", "pytest", "tests"' in src
+    assert 'tests/test_workflow_*.py' not in src
+
+
 # ── Phase policy enforcement ──────────────────────────────────────────────────
 
 READ_ONLY_PHASES = ["plan_review", "review_approved", "done"]
