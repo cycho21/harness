@@ -872,7 +872,13 @@ Risk level: ${spec.riskLevel}`,
         const qualitySpec = getCatalogCommand("project-quality");
         if (qualitySpec && gitRoot) {
           const qualityResult = runCatalogCommand(qualitySpec, gitRoot);
-          if (!qualityResult.ok) {
+          const isToolingError = !qualityResult.ok && (
+            qualityResult.output.includes("No quality command detected") ||
+            qualityResult.output.includes("No project-quality command") ||
+            qualityResult.exitCode == null
+          );
+          if (!qualityResult.ok && !isToolingError) {
+            // 실제 코드 품질 위반 — LLM에게 교정 지시
             const violations = qualityResult.output.split("\n").slice(-60).join("\n").trim();
             await steerLlm(
               `🔧 code_review 진입 전 품질 검사 실패 — 수정 후 workflow_approve를 다시 호출하세요.\n\n${violations}`,
@@ -882,6 +888,7 @@ Risk level: ${spec.riskLevel}`,
               details: { ok: false, reason: "quality-gate-failed" },
             };
           }
+          // isToolingError: quality 도구 미설치 등 환경 문제 — 통과 허용
         }
       }
 
@@ -2005,12 +2012,16 @@ Risk level: ${spec.riskLevel}`,
       const phase = state.workflow.phase;
       const phaseAllowed = PHASE_ALLOWED_BUILTIN_TOOLS[phase] as readonly string[] | undefined;
       if (phaseAllowed && !phaseAllowed.includes(event.toolName)) {
-        // commit/push/done: 비가역 행위 직전 — hard block 유지
-        if (phase === "commit" || phase === "push" || phase === "done") {
+        // commit/push: 커밋 내용 무결성 보호 — hard block 유지
+        if (phase === "commit" || phase === "push") {
           return {
             block: true,
-            reason: `⚠️ ${phase} 페이즈에서는 파일 수정이 허용되지 않습니다. 현재 단계를 완료하세요.`,
+            reason: `⚠️ ${phase} 페이즈에서는 파일 수정이 허용되지 않습니다. 코드 변경이 필요하면 implement 페이즈로 돌아가세요.`,
           };
+        }
+        // done: workflow 완료 후 steer
+        if (phase === "done") {
+          void steerLlm("workflow가 완료됐습니다. 추가 변경이 필요하면 /workflow start로 새 workflow를 시작하세요.");
         }
         // 그 외 read-only 페이즈(plan_review, code_review, review_approved):
         // block 대신 LLM에게 교정 지시를 주입하고 허용합니다.
