@@ -375,8 +375,13 @@ export default function (pi: ExtensionAPI) {
     // Only block shell operations that directly mutate files. Read-like commands
     // such as cat/grep/rg/ls/find, or interpreter commands used for inspection,
     // must remain allowed even when they mention .pi/extensions/**.
-    return /(^|[;&|]\s*)(rm|mv|cp|touch|mkdir|rmdir|sed\s+-i|perl\s+-pi)\b/.test(command)
-      || /(>|>>|\btee\b)/.test(command);
+    if (/(^|[;&|]\s*)(rm|mv|cp|touch|mkdir|rmdir|sed\s+-i|perl\s+-pi)\b/.test(command)) return true;
+    // Strip safe redirects before checking for output redirects:
+    //   2>/dev/null  >/dev/null  &>/dev/null  2>&1  1>&2  etc.
+    const stripped = command
+      .replace(/\d*&?>>?\/dev\/(null|zero|stdin|stdout|stderr)/g, "")
+      .replace(/\d*>&\d+/g, "");
+    return /(>|>>|\btee\b)/.test(stripped);
   }
 
   function requiresExtensionMutationApproval(toolName: string, input: unknown): boolean {
