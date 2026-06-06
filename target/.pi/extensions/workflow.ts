@@ -244,6 +244,78 @@ export default function (pi: ExtensionAPI) {
     return isStale;
   }
 
+  function clearPendingWorkflowSteersExceptCurrent(): void {
+    const current = state.workflow;
+    if (!current) {
+      state.pendingSteerMessages.clear();
+      return;
+    }
+    for (const [marker, pending] of state.pendingSteerMessages.entries()) {
+      if (pending.workflowId !== current.id || pending.phase !== current.phase) {
+        state.pendingSteerMessages.delete(marker);
+      }
+    }
+  }
+
+  function clearPendingWorkflowSteersForPhase(workflowId: string | null | undefined, phase: WorkflowPhase): void {
+    if (!workflowId) return;
+    for (const [marker, pending] of state.pendingSteerMessages.entries()) {
+      if (pending.workflowId === workflowId && pending.phase === phase) {
+        state.pendingSteerMessages.delete(marker);
+      }
+    }
+  }
+
+  const SKIPPABLE_WORKFLOW_GATES = ["dpaa", "code-quality", "policy-scan"] as const;
+  type SkippableWorkflowGate = typeof SKIPPABLE_WORKFLOW_GATES[number];
+
+  function isSkippableWorkflowGate(value: string): value is SkippableWorkflowGate {
+    return (SKIPPABLE_WORKFLOW_GATES as readonly string[]).includes(value);
+  }
+
+  const SKIPPABLE_WORKFLOW_GATE_DESCRIPTIONS: Record<SkippableWorkflowGate, string> = {
+    "dpaa": "DPAA ambiguity analysis gate (plan_review → implement)",
+    "code-quality": "Code quality/test gate (code_review → review_approved)",
+    "policy-scan": "Push policy scan gate (commit → push)",
+  };
+
+  async function recordWorkflowGateSkip(gate: SkippableWorkflowGate, reason: string, ctx: any): Promise<{ ok: boolean; gate: SkippableWorkflowGate; reason?: string }> {
+    const trimmedReason = reason.trim();
+    if (!trimmedReason) return { ok: false, gate, reason: "missing-reason" };
+    const failures = state.gateFailures.get(gate) ?? 0;
+    const ok = !ctx?.hasUI || (await ctx.ui.confirm(
+      "Workflow gate skip 승인 확인",
+      [
+        `${gate} gate를 1회 예외 처리합니다.`,
+        `대상: ${SKIPPABLE_WORKFLOW_GATE_DESCRIPTIONS[gate]}`,
+        failures > 0 ? `현재 연속 실패 횟수: ${failures}` : "현재 기록된 실패 횟수: 0",
+        "",
+        `사유: ${trimmedReason}`,
+        "",
+        "이 skip은 accepted-risk로 기록되며 10분 TTL의 1회성 예외입니다.",
+      ].join("\n"),
+    ));
+    if (!ok) return { ok: false, gate, reason: "user-declined" };
+    addSkipToken(gate, trimmedReason);
+    state.gateFailures.delete(gate);
+    clearPendingWorkflowSteersForPhase(state.workflow?.id, gate === "dpaa" ? "plan_review" : gate === "code-quality" ? "code_review" : "commit");
+    writeFieldLogEvent({
+      type: "gate.skipped",
+      category: gate === "policy-scan" ? "push-policy" : gate === "code-quality" ? "code-quality" : "dpaa",
+      severity: "warning",
+      status: "accepted-risk",
+      workflowId: state.workflow?.id,
+      phase: state.workflow?.phase,
+      gate,
+      findingCode: "gate.skip.accepted-risk",
+      action: "skip-gate-once",
+      impact: "Repeated exceptions may indicate guard false positives or missing workflow affordances.",
+      primaryMessage: trimmedReason,
+      improvementKind: gate === "dpaa" ? "dpaa-rule" : "workflow-rule",
+    });
+    return { ok: true, gate };
+  }
+
   function markWorkflowContinuationDelivered(text: string | undefined): void {
     if (!text) return;
     const marker = extractWorkflowContinuationMarker(text);
@@ -252,6 +324,7 @@ export default function (pi: ExtensionAPI) {
 
   function clearActiveWorkflowAfterCompletion(): void {
     cancelWorkflowContinuationPending();
+    state.pendingSteerMessages.clear();
     state.workflow = null;
     state.dpaaGuardSatisfiedToken = null;
     state.codeQualityGuardSatisfiedToken = null;
@@ -468,6 +541,7 @@ export default function (pi: ExtensionAPI) {
       notices.push("", formatWorkflowAction(state.workflow));
       if (result.ok) {
         applyPhaseToolPolicy(state.workflow.phase);
+        clearPendingWorkflowSteersExceptCurrent();
         refreshBoard(ctx);
         refreshStatus(ctx);
         await queueWorkflowContinuation(pi, ctx, state.workflow, result.transitions);
@@ -723,8 +797,9 @@ Risk level: ${spec.riskLevel}`,
             await steerLlm(
               `⚠️ ${result.gate} gate가 ${failures}번 연속 실패했습니다.\n\n` +
               `현재 접근 방식이 막혀있습니다. 다음을 시도해보세요:\n` +
-              `- 문제를 더 작은 단위로 분해해 각각 해결\n` +
               `- gate 실패 메시지의 근본 원인을 먼저 분석\n` +
+              `- DPAA 실패라면 자연어 문장 수정 반복을 멈추고 files/exports/tests/commands/non-goals 표 기반 contract plan으로 재작성\n` +
+              `- 문제를 더 작은 단위로 분해해 각각 해결\n` +
               `- 계획 자체가 문제라면 /workflow undo로 plan 단계로 돌아가 수정\n\n` +
               `Gate 메시지:\n${result.message.slice(0, 500)}`,
             );
@@ -742,6 +817,7 @@ Risk level: ${spec.riskLevel}`,
           state.dpaaGuardSatisfiedToken = { workflowId, issuedAt: Date.now(), reason: "user_approved", planSha256: dpaaTx?.planSha256 };
           persistGuardToken(HARNESS_TOKEN_TYPES.DPAA, state.dpaaGuardSatisfiedToken as unknown as Record<string, unknown>);
           state.gateFailures.delete("dpaa");
+          clearPendingWorkflowSteersForPhase(workflowId, "plan_review");
           // implement 시작 시점의 미테스트 클래스 snapshot 저장 (TDD 체크용)
           const implRoot = state.workflow?.gitRoot ?? getGitRoot();
           if (implRoot && state.workflow) {
@@ -757,6 +833,7 @@ Risk level: ${spec.riskLevel}`,
           state.recentVerificationCommands.push({ command: "codeQualityGuard", timestamp: Date.now(), phase: "code_review" });
           if (state.recentVerificationCommands.length > 20) state.recentVerificationCommands.shift();
           state.gateFailures.delete("code-quality");
+          clearPendingWorkflowSteersForPhase(workflowId, "code_review");
         }
         if (t.from === "commit" && t.to === "push") {
           state.pushExecutionGuardSatisfiedToken = { workflowId, issuedAt: Date.now(), reason: "user_approved" };
@@ -764,6 +841,7 @@ Risk level: ${spec.riskLevel}`,
         }
       });
 
+      clearPendingWorkflowSteersExceptCurrent();
       const completed = transitions.some((t) => t.to === "done");
       if (completed) {
         clearActiveWorkflowAfterCompletion();
@@ -797,6 +875,55 @@ Risk level: ${spec.riskLevel}`,
       const text = result.content[0]?.type === "text" ? result.content[0].text.split("\n")[0] : reason;
       return resultBox(theme, warning ? "warning" : "error", colorResultLabel(theme, warning ? "warning" : "error", `${warning ? "⚠️" : "❌"} ${text}`));
     },},{
+  });
+
+  // ── Tool: workflow_skip_gate — accepted-risk gate exception for LLM tool surface ────
+  pi.registerTool({
+    name: "workflow_skip_gate",
+    label: "Skip workflow gate once",
+    description: "Record an explicit interactive-user accepted-risk exception for one workflow gate. Use only after explaining the gate failure and receiving user approval.",
+    promptSnippet: "Skip one workflow gate after explicit user approval",
+    promptGuidelines: [
+      "Use only when a workflow gate is unnecessary or a false positive for the current task.",
+      "Explain the gate failure and risk before calling this tool.",
+      "A non-empty reason is required and the extension asks the interactive user for confirmation.",
+      "After the skip is accepted, call workflow_approve again to retry the transition.",
+    ],
+    parameters: Type.Object({
+      gate: Type.Union([Type.Literal("dpaa"), Type.Literal("code-quality"), Type.Literal("policy-scan")], { description: "Gate to skip once." }),
+      reason: Type.String({ description: "Concrete accepted-risk reason for skipping this gate once." }),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const gate = String(params.gate ?? "");
+      const reason = String(params.reason ?? "");
+      if (!isSkippableWorkflowGate(gate)) {
+        return { content: [{ type: "text", text: `Unknown workflow gate: ${gate || "<empty>"}` }], details: { ok: false, reason: "unknown-gate" } };
+      }
+      const result = await recordWorkflowGateSkip(gate, reason, ctx);
+      if (!result.ok) {
+        const text = result.reason === "missing-reason"
+          ? "Workflow gate skip rejected: a concrete reason is required."
+          : "Workflow gate skip was declined by the interactive user.";
+        return { content: [{ type: "text", text }], details: { ok: false, gate, reason: result.reason } };
+      }
+      return {
+        content: [{ type: "text", text: `✅ [${gate}] one-use gate exception recorded. Retry the transition with workflow_approve.\nReason: ${reason.trim()}` }],
+        details: { ok: true, gate, reason: reason.trim() },
+      };
+    },
+    renderCall(args, theme) {
+      return new Text(
+        theme.fg("toolTitle", theme.bold("workflow_skip_gate ")) +
+        theme.fg("warning", String(args.gate ?? "?")),
+        0, 0,
+      );
+    },
+    renderResult(result, { isPartial }, theme) {
+      if (isPartial) return resultBox(theme, "pending", theme.fg("warning", "Awaiting gate skip confirmation…"));
+      const ok = Boolean((result.details as Record<string, unknown> | undefined)?.ok);
+      const text = result.content[0]?.type === "text" ? result.content[0].text.split("\n")[0] : "workflow_skip_gate";
+      return resultBox(theme, ok ? "success" : "warning", colorResultLabel(theme, ok ? "success" : "warning", text));
+    },
   });
 
   // ── Tool: workflow_state — manual phase recovery (one step at a time) ────────────────
@@ -1428,8 +1555,14 @@ Risk level: ${spec.riskLevel}`,
         }
         const transitions = result.transitions ?? [];
         transitions.forEach((t) => {
-          if (t.from === "plan_review" && t.to === "implement") state.gateFailures.delete("dpaa");
-          if (t.from === "code_review" && t.to === "review_approved") state.gateFailures.delete("code-quality");
+          if (t.from === "plan_review" && t.to === "implement") {
+            state.gateFailures.delete("dpaa");
+            clearPendingWorkflowSteersForPhase(workflowId, "plan_review");
+          }
+          if (t.from === "code_review" && t.to === "review_approved") {
+            state.gateFailures.delete("code-quality");
+            clearPendingWorkflowSteersForPhase(workflowId, "code_review");
+          }
         });
         const transitionPath = transitions.map((t) => `${t.from} → ${t.to}`).join(", ");
         const notices: string[] = [result.message];
@@ -1454,6 +1587,7 @@ Risk level: ${spec.riskLevel}`,
           persistGuardToken(HARNESS_TOKEN_TYPES.PUSH_EXECUTION, state.pushExecutionGuardSatisfiedToken as unknown as Record<string, unknown>);
           notices.push("Push phase approved: commit → push transition evidence recorded in workflow history.");
         }
+        clearPendingWorkflowSteersExceptCurrent();
         const completed = transitions.some((t) => t.to === "done");
         if (transitionPath) notices.push(`Transition path: ${transitionPath}`);
         if (completed) {
@@ -1799,7 +1933,7 @@ Risk level: ${spec.riskLevel}`,
 
   // ── User-input checkpoint prompt + natural approval handling ───────────────
   pi.on("input", async (event, ctx) => {
-    if (event.source === "extension" && (consumeCancelledWorkflowContinuationPrompt(event.text) || consumeStaleWorkflowSteerPrompt(event.text))) {
+    if (consumeCancelledWorkflowContinuationPrompt(event.text) || consumeStaleWorkflowSteerPrompt(event.text)) {
       return { action: "handled" };
     }
 

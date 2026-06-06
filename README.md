@@ -299,7 +299,7 @@ git push 위험 변경 재확인
 .pi/extensions/** 수정
 ```
 
-`/workflow status`, `/workflow start`, `/workflow load`, `/workflow approve`, `/workflow state <phase>` 출력에는 `[LLM WORKFLOW ACTION]` 블록이 포함됩니다. 이 블록은 현재 phase, 다음 phase, 자동 전이/승인 경계 여부, LLM이 지금 해야 할 일을 명시합니다. 자동 전이 구간이 끝나면 pending message가 없을 때 extension이 follow-up continuation prompt를 한 번 큐에 넣어 LLM이 현재 phase 작업을 이어가게 합니다. 이 continuation은 승인 경계를 넘지 않고, stale/중복 marker guard로 보호됩니다. `push → done`처럼 workflow가 정상 완료되면 완료 이력은 저장하되 active workflow는 즉시 해제해 이후 prompt에 과거 phase continuation이 다시 주입되지 않게 합니다. `/workflow state <phase>`는 정상 진행 명령이 아니라 수동 복구 전용입니다. 정상 진행에서 사용자는 `/workflow approve`를 직접 입력하라는 안내를 받지 않고, 승인 경계에서 TUI yes/no 확인창으로 결정합니다. 자동 전이 구간은 사용자 확인 없이 진행됩니다. Workflow approval dashboard는 전환 메타데이터를 안전하게 문자열로 정규화해 일부 값이 비어 있어도 `undefined`를 노출하지 않습니다.
+`/workflow status`, `/workflow start`, `/workflow load`, `/workflow approve`, `/workflow state <phase>` 출력에는 `[LLM WORKFLOW ACTION]` 블록이 포함됩니다. 이 블록은 현재 phase, 다음 phase, 자동 전이/승인 경계 여부, LLM이 지금 해야 할 일을 명시합니다. 자동 전이 구간이 끝나면 pending message가 없을 때 extension이 follow-up continuation prompt를 한 번 큐에 넣어 LLM이 현재 phase 작업을 이어가게 합니다. 이 continuation은 승인 경계를 넘지 않고, stale/중복 marker guard로 보호됩니다. phase가 바뀌면 이전 phase의 steer marker를 정리하고, 뒤늦게 도착한 stale steer는 extension/user 입력 source와 무관하게 소비해 과거 `plan_review` 또는 `code_review` 안내가 현재 phase를 덮어쓰지 않게 합니다. `push → done`처럼 workflow가 정상 완료되면 완료 이력은 저장하되 active workflow는 즉시 해제해 이후 prompt에 과거 phase continuation이 다시 주입되지 않게 합니다. `/workflow state <phase>`는 정상 진행 명령이 아니라 수동 복구 전용입니다. 정상 진행에서 사용자는 `/workflow approve`를 직접 입력하라는 안내를 받지 않고, 승인 경계에서 TUI yes/no 확인창으로 결정합니다. 자동 전이 구간은 사용자 확인 없이 진행됩니다. Workflow approval dashboard는 전환 메타데이터를 안전하게 문자열로 정규화해 일부 값이 비어 있어도 `undefined`를 노출하지 않습니다.
 
 `/workflow start <목표>`가 `interview` phase를 시작하면 UI 세션에서는 interview wizard가 자동으로 열립니다. Wizard는 기존 5개 인터뷰 질문을 하나씩 보여주며, 대부분의 질문에서 선택지와 자유입력을 함께 받고 선택 질문은 `모름/건너뛰기`를 허용합니다. 필수 질문은 선택지 또는 자유입력 없이 다음으로 진행할 수 없습니다. Editor 위 progress widget은 현재/완료/남은 질문을 표시하고, footer status는 workflow title, 현재 phase, 다음 phase, 전체 phase progress를 표시합니다. Wizard 중 preview 키로 답변 요약을 볼 수 있으며 마지막 질문 후 같은 요약 preview가 자동 표시됩니다. UI가 없거나 wizard가 취소/실패하면 기존 채팅 기반 interview continuation으로 fallback됩니다.
 
@@ -411,10 +411,11 @@ hard guard는 자동 진행 중에도 우회할 수 없습니다.
 | Review completion | `code_review → review_approved`, `commit → push` | review package/quality gate와 순차 전이 이력으로 검사 |
 | Extension modification approval | `.pi/extensions/**` 수정 | 사용자 승인 없는 extension 수정 차단 |
 
-예외적으로 gate를 건너뛰려면 명시적 skip이 필요합니다. 정상 경로에서는 token 발급을 권한 증명으로 삼지 않고, workflow의 현재 phase와 허용된 다음 전이 여부를 기준으로 판단합니다.
+예외적으로 gate를 건너뛰려면 명시적 skip이 필요합니다. 정상 경로에서는 token 발급을 권한 증명으로 삼지 않고, workflow의 현재 phase와 허용된 다음 전이 여부를 기준으로 판단합니다. 사용자가 gate skip을 명시적으로 승인한 경우 LLM은 slash command를 대신 실행할 수 없으므로 `workflow_skip_gate` tool로 동일한 1회성 accepted-risk 예외를 기록할 수 있습니다. 두 경로 모두 TUI 확인창을 거치며, skip 후에는 다시 `workflow_approve`로 전이를 재시도해야 합니다.
 
 ```text
 /workflow skip <dpaa|code-quality|policy-scan> <reason>
+workflow_skip_gate(gate, reason)
 ```
 
 ---

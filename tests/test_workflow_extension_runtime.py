@@ -568,7 +568,7 @@ def test_stale_phase_steer_message_is_consumed_after_phase_changes(tmp_path):
           const staleText = sentMessages.find((item) => item.text.includes('plan_review 페이즈')).text;
           await pi.commands.workflow.handler('skip dpaa stale steer test', ctx);
           await pi.commands.workflow.handler('approve', ctx);
-          const consumed = await pi.events.input({ source: 'extension', text: staleText }, ctx);
+          const consumed = await pi.events.input({ source: 'interactive', text: staleText }, ctx);
           console.log(JSON.stringify({ consumed, staleText, phaseTools: pi.activeTools }));
         })().catch((error) => { console.error(error.stack || String(error)); process.exit(1); });
         '''
@@ -578,3 +578,100 @@ def test_stale_phase_steer_message_is_consumed_after_phase_changes(tmp_path):
     assert data["consumed"]["action"] == "handled"
     assert "harness-workflow-steer" in data["staleText"]
     assert "write" in data["phaseTools"]
+
+
+def test_stale_code_review_steer_is_consumed_after_phase_advances_to_commit(tmp_path):
+    script = textwrap.dedent(
+        r'''
+        const path = require('path');
+        const { createJiti } = require('jiti');
+        process.chdir('target');
+
+        const sentMessages = [];
+        const pi = {
+          events: {}, commands: {}, tools: {},
+          on(name, fn) { this.events[name] = fn; },
+          registerCommand(name, spec) { this.commands[name] = spec; },
+          registerTool(spec) { this.tools[spec.name] = spec; },
+          sendUserMessage(text, options) { sentMessages.push({ text, options }); },
+          getAllTools() { return [
+            { name: 'read', sourceInfo: { source: 'builtin' } },
+            { name: 'write', sourceInfo: { source: 'builtin' } },
+            { name: 'edit', sourceInfo: { source: 'builtin' } },
+            { name: 'bash', sourceInfo: { source: 'builtin' } },
+            ...Object.keys(this.tools).map((name) => ({ name, sourceInfo: { source: 'extension' } })),
+          ]; },
+          setActiveTools(names) { this.activeTools = names; },
+        };
+        const jiti = createJiti(path.resolve('runtime-test.js'), { interopDefault: false });
+        jiti(path.resolve('.pi/extensions/workflow.ts')).default(pi);
+
+        const ctx = { hasUI: true, hasPendingMessages: () => false, isIdle: () => false, ui: { notify: () => {}, confirm: async () => true, select: async (_m, options) => options[0], setStatus: () => {}, setWidget: () => {} } };
+
+        (async () => {
+          await pi.commands.workflow.handler('start stale review steer workflow', ctx);
+          await pi.commands.workflow.handler('state code_review', ctx);
+          await pi.events.tool_call({ toolName: 'edit', input: { path: 'src/app.txt', edits: [] } }, ctx);
+          const staleText = sentMessages.find((item) => item.text.includes('code_review 페이즈')).text;
+          await pi.commands.workflow.handler('state commit', ctx);
+          const consumed = await pi.events.input({ source: 'interactive', text: staleText }, ctx);
+          console.log(JSON.stringify({ consumed, staleText, phaseTools: pi.activeTools }));
+        })().catch((error) => { console.error(error.stack || String(error)); process.exit(1); });
+        '''
+    )
+    data = _run_node_runtime(script, tmp_path)
+
+    assert data["consumed"]["action"] == "handled"
+    assert "harness-workflow-steer" in data["staleText"]
+    assert "workflow_approve" in data["phaseTools"]
+
+
+def test_workflow_skip_gate_tool_allows_llm_to_record_interactive_skip_and_advance(tmp_path):
+    script = textwrap.dedent(
+        r'''
+        const path = require('path');
+        const { createJiti } = require('jiti');
+        process.chdir('target');
+
+        const confirms = [];
+        const pi = {
+          events: {}, commands: {}, tools: {},
+          on(name, fn) { this.events[name] = fn; },
+          registerCommand(name, spec) { this.commands[name] = spec; },
+          registerTool(spec) { this.tools[spec.name] = spec; },
+          sendUserMessage() {},
+          getAllTools() { return [
+            { name: 'read', sourceInfo: { source: 'builtin' } },
+            { name: 'write', sourceInfo: { source: 'builtin' } },
+            { name: 'edit', sourceInfo: { source: 'builtin' } },
+            { name: 'bash', sourceInfo: { source: 'builtin' } },
+            ...Object.keys(this.tools).map((name) => ({ name, sourceInfo: { source: 'extension' } })),
+          ]; },
+          setActiveTools(names) { this.activeTools = names; },
+        };
+        const jiti = createJiti(path.resolve('runtime-test.js'), { interopDefault: false });
+        jiti(path.resolve('.pi/extensions/workflow.ts')).default(pi);
+
+        const ctx = { hasUI: true, hasPendingMessages: () => false, isIdle: () => false, ui: { notify: () => {}, confirm: async (text) => { confirms.push(text); return true; }, select: async (_m, options) => options[0], setStatus: () => {}, setWidget: () => {} } };
+
+        (async () => {
+          await pi.commands.workflow.handler('start skip tool workflow', ctx);
+          await pi.commands.workflow.handler('approve', ctx);
+          const skip = await pi.tools.workflow_skip_gate.execute('skip-1', {
+            gate: 'dpaa',
+            reason: 'DPAA false positive on deterministic contract plan test fixture.',
+          }, undefined, undefined, ctx);
+          const approved = await pi.tools.workflow_approve.execute('approve-1', { summary: 'Advance after explicit gate skip approval.' }, undefined, undefined, ctx);
+          console.log(JSON.stringify({ toolNames: Object.keys(pi.tools), skip: skip.details, approved: approved.details, confirms, phaseTools: pi.activeTools }));
+        })().catch((error) => { console.error(error.stack || String(error)); process.exit(1); });
+        '''
+    )
+    data = _run_node_runtime(script, tmp_path)
+
+    assert "workflow_skip_gate" in data["toolNames"]
+    assert data["skip"]["ok"] is True
+    assert data["skip"]["gate"] == "dpaa"
+    assert data["approved"]["ok"] is True
+    assert "plan_review → implement" in data["approved"]["transitions"]
+    assert any("Workflow gate skip 승인 확인" in item for item in data["confirms"])
+    assert "workflow_approve" in data["phaseTools"] or "submit_review_package" in data["phaseTools"]
