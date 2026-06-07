@@ -32,6 +32,7 @@ COMPONENT_PATHS = {
         ".pi/WORKFLOW.md",
         ".pi/GOVERNANCE.md",
         ".pi/extensions/workflow.ts",
+        ".pi/extensions/assistant-markdown-box.ts",
         ".pi/extensions/workflow",
         ".harness/workflow-policy.json",
         ".ai/interview",

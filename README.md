@@ -8,7 +8,7 @@ Pi 기반 LLM 개발 세션에 **workflow 거버넌스**, **기계적 guard**, *
 
 TUI 시인성 개선을 위해 배포 템플릿에 project-local 테마 `target/.pi/themes/workflow-console.json`을 포함합니다. 이 테마는 어두운 배경을 유지하면서 상태/강조 요소에 cyan, pink, yellow, green 계열을 더 선명하게 쓰는 colorful console 팔레트입니다. 설치된 프로젝트에서는 `.pi/themes/workflow-console.json`으로 배치되며, Pi의 `/settings`에서 `workflow-console`을 선택해 사용할 수 있습니다.
 
-TUI 개선용 harness extension helper `target/.pi/extensions/workflow/markdown-box.ts`는 semantic fenced block 타입 `note`, `warning`, `error`, `plan`, `review`, `decision`, `tip`을 박스형 line rendering으로 변환하는 재사용 유틸리티를 제공합니다. 이 helper는 harness extension 소유 workflow/custom/tool 렌더링 경로용이며, global assistant-message Markdown rendering은 Pi core가 계속 소유합니다.
+TUI 개선용 harness extension helper `target/.pi/extensions/workflow/markdown-box.ts`는 semantic fenced block 타입 `note`, `warning`, `error`, `plan`, `review`, `decision`, `tip`을 박스형 line rendering으로 변환하는 재사용 유틸리티를 제공합니다. 또한 `target/.pi/extensions/assistant-markdown-box.ts`는 LLM assistant 응답의 자연어 fenced block info string(`text`, `plain`, `plaintext`, `txt`)을 TUI에서 따뜻한 amber 배경 패널로 렌더링합니다. 실제 code fence는 기존 Pi Markdown 렌더러에 맡기며, provider context/session에 저장되는 assistant 메시지 원문은 바꾸지 않습니다.
 
 설치된 프로젝트의 루트에는 기본적으로 다음만 노출됩니다.
 
@@ -299,7 +299,7 @@ git push 위험 변경 재확인
 .pi/extensions/** 수정
 ```
 
-`/workflow status`, `/workflow start`, `/workflow load`, `/workflow approve`, `/workflow state <phase>` 출력에는 `[LLM WORKFLOW ACTION]` 블록이 포함됩니다. 이 블록은 현재 phase, 다음 phase, 자동 전이/승인 경계 여부, LLM이 지금 해야 할 일을 명시합니다. 자동 전이 구간이 끝나면 pending message가 없을 때 extension이 follow-up continuation prompt를 한 번 큐에 넣어 LLM이 현재 phase 작업을 이어가게 합니다. 이 continuation은 승인 경계를 넘지 않고, stale/중복 marker guard로 보호됩니다. phase가 바뀌면 이전 phase의 steer marker를 정리하고, 뒤늦게 도착한 stale steer는 extension/user 입력 source와 무관하게 소비해 과거 `plan_review` 또는 `code_review` 안내가 현재 phase를 덮어쓰지 않게 합니다. `push → done`처럼 workflow가 정상 완료되면 완료 이력은 저장하되 active workflow는 즉시 해제해 이후 prompt에 과거 phase continuation이 다시 주입되지 않게 합니다. `/workflow state <phase>`는 정상 진행 명령이 아니라 수동 복구 전용입니다. 정상 진행에서 사용자는 `/workflow approve`를 직접 입력하라는 안내를 받지 않고, 승인 경계에서 TUI yes/no 확인창으로 결정합니다. 자동 전이 구간은 사용자 확인 없이 진행됩니다. Workflow approval dashboard는 전환 메타데이터를 안전하게 문자열로 정규화해 일부 값이 비어 있어도 `undefined`를 노출하지 않습니다.
+`/workflow status`, `/workflow start`, `/workflow load`, `/workflow approve`, `/workflow state <phase>` 출력에는 `[LLM WORKFLOW ACTION]` 블록이 포함됩니다. 이 블록은 현재 phase, 다음 phase, 자동 전이/승인 경계 여부, LLM이 지금 해야 할 일을 명시합니다. 자동 전이 구간이 끝나고 agent가 idle이며 pending message가 없을 때만 extension이 continuation prompt를 한 번 보내 LLM이 현재 phase 작업을 이어가게 합니다. 이 continuation은 승인 경계를 넘지 않고, stale/중복 marker guard로 보호됩니다. phase가 바뀌면 이전 phase의 steer marker를 정리하고, 뒤늦게 도착한 stale steer는 extension/user 입력 source와 무관하게 소비해 과거 `plan_review` 또는 `code_review` 안내가 현재 phase를 덮어쓰지 않게 합니다. 또한 `plan_review`, `code_review`, `review_approved` 같은 read-only phase에서 `write/edit`이 호출되면 follow-up steering을 큐에 넣지 않고 tool call을 즉시 차단하며, workflow continuation도 busy 상태에서는 follow-up queue에 넣지 않아 `Follow-up: ⚠️ ...` 경고나 stale continuation이 TUI에 누적되지 않게 합니다. `push` phase에서 실제 `git push`가 성공하면 bash `tool_result`를 완료 이벤트로 소비해 `push → done`으로 자동 전이합니다. 이때 완료 이력은 저장하되 active workflow는 즉시 해제해 이후 prompt에 과거 phase continuation이 다시 주입되지 않게 합니다. `/workflow state <phase>`는 정상 진행 명령이 아니라 수동 복구 전용입니다. 정상 진행에서 사용자는 `/workflow approve`를 직접 입력하라는 안내를 받지 않고, 승인 경계에서 TUI yes/no 확인창으로 결정합니다. 자동 전이 구간은 사용자 확인 없이 진행됩니다. Workflow approval dashboard는 전환 메타데이터를 안전하게 문자열로 정규화해 일부 값이 비어 있어도 `undefined`를 노출하지 않습니다.
 
 `/workflow start <목표>`가 `interview` phase를 시작하면 UI 세션에서는 interview wizard가 자동으로 열립니다. Wizard는 기존 5개 인터뷰 질문을 하나씩 보여주며, 대부분의 질문에서 선택지와 자유입력을 함께 받고 선택 질문은 `모름/건너뛰기`를 허용합니다. 필수 질문은 선택지 또는 자유입력 없이 다음으로 진행할 수 없습니다. Editor 위 progress widget은 현재/완료/남은 질문을 표시하고, footer status는 workflow title, 현재 phase, 다음 phase, 전체 phase progress를 표시합니다. Wizard 중 preview 키로 답변 요약을 볼 수 있으며 마지막 질문 후 같은 요약 preview가 자동 표시됩니다. UI가 없거나 wizard가 취소/실패하면 기존 채팅 기반 interview continuation으로 fallback됩니다.
 
@@ -317,7 +317,7 @@ git push 위험 변경 재확인
 | `review_approved` | 리뷰 패키지와 품질 gate 통과 | 자동으로 `document` 진행 |
 | `document` | 필요한 문서/feature docs 작성 | 사용자 승인 없이 자동으로 `commit` 준비 가능 |
 | `commit` | diff 요약, 검증 요약, commit message 준비 | 사용자 승인 + policy scan 후 `push` |
-| `push` | 원격 반영 준비 완료 | git push guard 통과 후 push |
+| `push` | 원격 반영 준비 완료 | git push guard 통과 및 성공한 `git push` result 후 `done` 자동 전이 |
 | `done` | workflow 완료 후 active workflow 해제 | 새 workflow 시작 가능 |
 
 ---

@@ -31,6 +31,7 @@ function Get-ManagedPaths {
                     ".pi/WORKFLOW.md",
                     ".pi/GOVERNANCE.md",
                     ".pi/extensions/workflow.ts",
+                    ".pi/extensions/assistant-markdown-box.ts",
                     ".pi/extensions/workflow",
                     ".harness/workflow-policy.json",
                     ".ai/interview/feature-interview-protocol.md",
