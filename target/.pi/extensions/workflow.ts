@@ -133,8 +133,8 @@ export default function (pi: ExtensionAPI) {
   }
 
   /** LLM에게 교정 지시를 주입합니다. 사용자에게 묻지 않고 LLM이 스스로 수정하도록 유도합니다.
-   * @param deliverAs "followUp"(기본): 현재 응답 완료 후 전달. "steer": 현재 tool call 직후 즉시 개입. */
-  async function steerLlm(message: string, deliverAs: "followUp" | "steer" = "followUp"): Promise<void> {
+   * @param deliverAs "steer"(기본): 현재 tool batch 직후 개입. "followUp"은 workflow 종료 후까지 밀릴 수 있어 예외적으로만 사용합니다. */
+  async function steerLlm(message: string, deliverAs: "followUp" | "steer" = "steer"): Promise<void> {
     try {
       const workflow = state.workflow;
       if (!workflow) {
@@ -335,6 +335,10 @@ export default function (pi: ExtensionAPI) {
     state.gateFailures = new Map();
   }
 
+  function isGitPushDryRun(cmd: string): boolean {
+    return /(?:^|\s)(?:--dry-run|-n)(?:\s|$)/.test(cmd);
+  }
+
   function shouldSendWorkflowContinuation(workflow: WorkflowInstance, transitions: Array<{ from: WorkflowPhase; to: WorkflowPhase }> | undefined): boolean {
     if (!transitions?.some((item) => isSharedAutoAdvancePhase(item.from))) return false;
     return ["plan_review", "code_review", "commit"].includes(workflow.phase);
@@ -371,8 +375,14 @@ export default function (pi: ExtensionAPI) {
         return;
       }
       const prompt = buildWorkflowContinuationPrompt(workflow, marker);
-      const options = ctx.isIdle?.() ? undefined : { deliverAs: "followUp" };
-      await (piApi as any).sendUserMessage(prompt, options);
+      if (!ctx.isIdle?.()) {
+        // Do not queue continuation as followUp while the agent is busy. In long
+        // automatic workflows, followUp can remain pending until the workflow is
+        // already finished, then arrive as stale "Follow-up: ..." input.
+        state.workflowContinuationPending = null;
+        return;
+      }
+      await (piApi as any).sendUserMessage(prompt);
     } catch (error) {
       state.workflowContinuationPending = null;
       ctx.ui.notify(`Workflow continuation prompt failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
@@ -2029,19 +2039,19 @@ Risk level: ${spec.riskLevel}`,
         if (phase === "done") {
           void steerLlm("workflow가 완료됐습니다. 추가 변경이 필요하면 /workflow start로 새 workflow를 시작하세요.");
         }
-        // 그 외 read-only 페이즈(plan_review, code_review, review_approved):
-        // block 대신 LLM에게 교정 지시를 주입하고 허용합니다.
+        // 그 외 read-only 페이즈(plan_review, code_review, review_approved)는
+        // follow-up steering을 큐에 넣지 않고 즉시 차단합니다. sendUserMessage 기반
+        // steering은 TUI에 "Follow-up: ..."로 표시되어 같은 phase 경고가 누적될 수 있습니다.
         const phaseGuide: Record<string, string> = {
           plan_review: "plan_review 페이즈입니다. 파일을 수정하기 전에 plan 검토를 완료하고 workflow_approve로 implement 단계로 진행하세요.",
           code_review: "code_review 페이즈입니다. 소스 수정이 필요하다면 implement 페이즈로 돌아가거나, 리뷰를 먼저 완료하세요.",
           review_approved: "review_approved 페이즈입니다. 문서화 작업만 필요하며 소스 수정은 이 단계에서 하지 않습니다.",
         };
         const guide = phaseGuide[phase] ?? `${phase} 페이즈에서는 소스 수정이 계획에 없습니다.`;
-        void steerLlm(`⚠️ ${guide}`);
-        // 실제 write는 허용 (능력 제한 없음)
+        return { block: true, reason: `⚠️ ${guide}` };
       }
 
-      // Phase write-path policy: 경로 위반 시 steer로 교정 유도 (hard block 대신)
+      // Phase write-path policy: 경로 위반 시 follow-up steering 대신 즉시 차단합니다.
       const pathPolicy = getPhaseWritePathPolicy(state.workflow.phase);
       if (pathPolicy) {
         const filePath = String((event.input as any).path ?? "");
@@ -2054,8 +2064,7 @@ Risk level: ${spec.riskLevel}`,
             const hint = pathPolicy.mode === "deny"
               ? `${state.workflow.phase} 페이즈에서는 문서(마크다운, HTML 등)만 작성할 수 있습니다. 소스 코드 수정이 필요하다면 implement 페이즈로 돌아가세요.`
               : `이 페이즈에서 허용된 경로: ${pathPolicy.patterns.join(", ")}.`;
-            void steerLlm(`⚠️ ${hint}`);
-            // write는 허용 — 능력 제한 없이 방향만 교정
+            return { block: true, reason: `⚠️ ${hint}` };
           }
         }
       }
@@ -2236,6 +2245,38 @@ Risk level: ${spec.riskLevel}`,
 
     // Review authority is enforced during code_review → review_approved and commit → push.
     // `git push` only rechecks workspace, phase, transition history, and push policy.
+  });
+
+  // ── Post-push completion: successful git push completes the workflow ───────
+  pi.on("tool_result", async (event, ctx) => {
+    if (event.toolName !== "bash") return;
+    const cmd = String((event.input as any)?.command ?? "");
+    if (!isGitPush(cmd) || isGitPushDryRun(cmd)) return;
+    if (event.isError) return;
+    if (!state.workflow || state.workflow.phase !== "push") return;
+    if (!state.workflow.history.some((item) => item.from === "commit" && item.to === "push")) return;
+
+    transitionWorkflow(state.workflow, "done", "git_push_succeeded");
+    saveWorkflow(state.workflow);
+    writeFieldLogEvent({
+      type: "phase.transition",
+      category: "phase",
+      severity: "info",
+      status: "resolved",
+      workflow: state.workflow,
+      summary: "Successful git push completed the workflow.",
+      expected: "A successful push-phase git push advances push → done.",
+      actual: "git push tool_result completed without error.",
+      impact: "Active workflow is cleared so stale push-phase context is not injected into later prompts.",
+      primaryMessage: "Workflow 전이: push → done",
+      command: cmd,
+      improvementKind: "workflow-rule",
+    });
+    clearActiveWorkflowAfterCompletion();
+    applyPhaseToolPolicy(null);
+    refreshBoard(ctx);
+    refreshStatus(ctx);
+    ctx.ui.notify("Workflow 전이: push → done\nGit push 성공으로 workflow를 완료했습니다.", "info");
   });
 
   // ── session_start: 상태 초기화 + 세션 컨텍스트 알림 ───────────────────────

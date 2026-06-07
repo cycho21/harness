@@ -7,7 +7,7 @@ Verifies that:
 - Read-only phases do not allow write/edit
 - Write phases allow write/edit
 - applyPhaseToolPolicy is wired in workflow.ts
-- tool_call backstop blocks write/edit in read-only phases
+- tool_call backstop blocks write/edit in read-only phases without queuing follow-up steering
 """
 from pathlib import Path
 
@@ -99,12 +99,13 @@ def test_apply_phase_tool_policy_called_on_start():
     assert src.count("applyPhaseToolPolicy") >= 3
 
 
-def test_tool_call_backstop_steers_write_edit_in_readonly_phases():
+def test_tool_call_backstop_blocks_write_edit_in_readonly_phases_without_followup_steering():
     src = WORKFLOW_EXTENSION.read_text(encoding="utf-8")
     assert "PHASE_ALLOWED_BUILTIN_TOOLS" in src
     assert 'event.toolName === "write"' in src or "event.toolName ===" in src
     assert "phaseAllowed && !phaseAllowed.includes(event.toolName)" in src
-    assert "void steerLlm" in src
+    assert "return { block: true, reason: `⚠️ ${guide}` }" in src
+    assert "sendUserMessage 기반" in src
 
 
 def test_workflow_typo_suggestion_helper_defined_in_runtime_policy():
@@ -121,6 +122,20 @@ def test_stale_steer_marker_has_parse_fallback_after_eviction():
     assert "marker.split(\":\")" in src
     assert "pending?.workflowId ?? markerWorkflowId" in src
     assert "isSharedWorkflowPhase(markerPhase)" in src
+
+
+def test_workflow_continuation_does_not_queue_followup_when_busy():
+    src = WORKFLOW_EXTENSION.read_text(encoding="utf-8")
+    assert "function queueWorkflowContinuation" in src
+    assert "if (!ctx.isIdle?.())" in src
+    assert "state.workflowContinuationPending = null" in src
+    assert "followUp can remain pending until the workflow is" in src
+    assert 'const options = ctx.isIdle?.() ? undefined : { deliverAs: "followUp" }' not in src
+
+
+def test_steer_llm_defaults_to_steer_not_followup():
+    src = WORKFLOW_EXTENSION.read_text(encoding="utf-8")
+    assert 'async function steerLlm(message: string, deliverAs: "followUp" | "steer" = "steer")' in src
 
 
 def test_tdd_gate_checks_write_and_edit_calls_in_implement_phase():

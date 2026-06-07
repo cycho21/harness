@@ -93,6 +93,7 @@ def _make_fake_llm_script(
     async function command(args) { return pi.commands.workflow.handler(args, ctx); }
     async function tool(name, params) { return pi.tools[name].execute(`${name}-1`, params, undefined, undefined, ctx); }
     async function toolCall(toolName, input) { return pi.events.tool_call({ toolName, input }, ctx); }
+    async function toolResult(toolName, input, isError = false) { return pi.events.tool_result?.({ toolName, input, isError, content: [], details: {} }, ctx); }
     async function beforeAgentStart(systemPrompt = 'base') { return pi.events.before_agent_start({ systemPrompt }); }
     function textOf(result) { return result.content?.[0]?.text ?? ''; }
     function fileText(relPath) { return fs.existsSync(relPath) ? fs.readFileSync(relPath, 'utf-8') : null; }
@@ -191,6 +192,7 @@ def test_fake_llm_agent_loop_drives_full_workflow_and_recovers_from_bad_actions(
         await command('approve'); // commit -> push
         observations.toolsPush = pi.activeTools;
         observations.push = await toolCall('bash', { command: 'git push origin HEAD' });
+        await toolResult('bash', { command: 'git push origin HEAD' }, false);
 
         const prompt = await beforeAgentStart('base');
         dump({ observations, appFile: fileText('src/app.txt'), prompt: prompt.systemPrompt });
@@ -206,8 +208,8 @@ def test_fake_llm_agent_loop_drives_full_workflow_and_recovers_from_bad_actions(
     assert "workflow_approve" in observations["toolsCommit"]
     assert "bash" in observations["toolsPush"]
 
-    assert "planReviewEdit" not in observations
-    assert any("plan_review 페이즈" in item["text"] for item in data["sentMessages"])
+    assert observations["planReviewEdit"]["block"] is True
+    assert "plan_review 페이즈" in observations["planReviewEdit"]["reason"]
     assert observations["planReviewPropose"]["ok"] is False
     assert observations["planReviewPropose"]["reason"] == "phase-not-allowed"
     assert observations["prePush"]["block"] is True
@@ -226,10 +228,10 @@ def test_fake_llm_agent_loop_drives_full_workflow_and_recovers_from_bad_actions(
     assert "push" not in observations  # undefined from JS means allowed and is omitted by JSON.stringify
 
     assert data["appFile"] == "hello from fake llm workflow\n"
-    assert "Current phase: push" in data["prompt"]
-    assert "Push transition evidence: present" in data["prompt"]
-    assert "workflow_run_command" in data["activeTools"]
-    assert data["sentMessageCount"] >= 1
+    assert "No active workflow" in data["prompt"]
+    assert "Current phase: push" not in data["prompt"]
+    assert "bash" in data["activeTools"]
+    assert all(item.get("options") != {"deliverAs": "followUp"} for item in data["sentMessages"])
     assert data["statusUpdates"] > 0
     assert data["widgetUpdates"] > 0
     assert "Workflow gate skip 승인 확인" in data["confirmTitles"]

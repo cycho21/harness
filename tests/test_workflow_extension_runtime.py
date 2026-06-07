@@ -47,6 +47,7 @@ def test_workflow_extension_runtime_registers_and_allows_restored_push(tmp_path)
           await pi.commands.workflow.handler('start Runtime restored push', ctx);
           await pi.commands.workflow.handler('state push', ctx);
           const pushResult = await pi.events.tool_call({ toolName: 'bash', input: { command: 'git push origin HEAD' } }, ctx);
+          await pi.events.tool_result({ toolName: 'bash', input: { command: 'git push origin HEAD' }, isError: false, content: [], details: {} }, ctx);
           const prompt = await pi.events.before_agent_start({ systemPrompt: 'base' });
           console.log(JSON.stringify({
             commandNames: Object.keys(pi.commands),
@@ -65,8 +66,9 @@ def test_workflow_extension_runtime_registers_and_allows_restored_push(tmp_path)
     assert "submit_review_result" not in data["toolNames"]
     assert data["pushAllowed"] is True
     assert "Workflow state 수동 변경 승인 확인" in data["confirmTitles"]
-    assert "[Workflow Guard Evidence]" in data["prompt"]
-    assert "Push transition evidence: present" in data["prompt"]
+    assert "No active workflow" in data["prompt"]
+    assert "Current phase: push" not in data["prompt"]
+    assert any("Workflow 전이: push → done" in item for item in data["notifications"])
 
 
 def test_workflow_extension_runtime_status_without_active_workflow_includes_llm_action(tmp_path):
@@ -224,7 +226,7 @@ def test_workflow_extension_runtime_auto_advances_low_risk_phase_boundaries(tmp_
     assert "Workflow 전이: review_approved → document → commit" in joined
 
 
-def test_workflow_extension_runtime_queues_continuation_after_auto_transition(tmp_path):
+def test_workflow_extension_runtime_does_not_queue_continuation_while_busy_after_auto_transition(tmp_path):
     script = textwrap.dedent(
         r'''
         const path = require('path');
@@ -257,16 +259,12 @@ def test_workflow_extension_runtime_queues_continuation_after_auto_transition(tm
     )
     data = _run_node_runtime(script, tmp_path)
 
-    assert len(data["sentMessages"]) == 2
+    assert len(data["sentMessages"]) == 1
     assert "현재 페이즈: interview" in data["sentMessages"][0]["text"]
-    assert data["sentMessages"][1]["options"] == {"deliverAs": "followUp"}
-    assert "Continue the workflow from the current phase" in data["sentMessages"][1]["text"]
-    assert "Current phase: code_review" in data["sentMessages"][1]["text"]
-    assert "Do not cross a user-approval boundary automatically" in data["sentMessages"][1]["text"]
-    assert "harness-workflow-continuation:" in data["sentMessages"][1]["text"]
+    assert all("Continue the workflow from the current phase" not in item["text"] for item in data["sentMessages"])
 
 
-def test_workflow_extension_runtime_cancelled_continuation_prompt_is_consumed(tmp_path):
+def test_workflow_extension_runtime_busy_auto_transition_does_not_create_stale_continuation(tmp_path):
     script = textwrap.dedent(
         r'''
         const path = require('path');
@@ -292,19 +290,16 @@ def test_workflow_extension_runtime_cancelled_continuation_prompt_is_consumed(tm
         (async () => {
           await pi.commands.workflow.handler('start Runtime stale continuation', ctx);
           await pi.commands.workflow.handler('approve', ctx);
-          const stalePrompt = sentMessages[0].text;
           await pi.commands.workflow.handler('state implement', ctx);
-          const staleInputResult = await pi.events.input({ source: 'extension', text: stalePrompt }, ctx);
-          console.log(JSON.stringify({ sentMessages, staleInputResult }));
+          console.log(JSON.stringify({ sentMessages }));
         })().catch((error) => { console.error(error.stack || String(error)); process.exit(1); });
         '''
     )
     data = _run_node_runtime(script, tmp_path)
 
-    assert len(data["sentMessages"]) == 2
+    assert len(data["sentMessages"]) == 1
     assert "현재 페이즈: interview" in data["sentMessages"][0]["text"]
-    assert "Current phase: plan_review" in data["sentMessages"][1]["text"]
-    assert data["staleInputResult"] == {"action": "handled"}
+    assert all("Current phase: plan_review" not in item["text"] for item in data["sentMessages"])
 
 
 def test_workflow_extension_runtime_skips_continuation_when_messages_pending(tmp_path):
@@ -564,19 +559,18 @@ def test_stale_phase_steer_message_is_consumed_after_phase_changes(tmp_path):
         (async () => {
           await pi.commands.workflow.handler('start stale steer workflow', ctx);
           await pi.commands.workflow.handler('approve', ctx);
-          await pi.events.tool_call({ toolName: 'edit', input: { path: 'src/app.txt', edits: [] } }, ctx);
-          const staleText = sentMessages.find((item) => item.text.includes('plan_review 페이즈')).text;
+          const editResult = await pi.events.tool_call({ toolName: 'edit', input: { path: 'src/app.txt', edits: [] } }, ctx);
           await pi.commands.workflow.handler('skip dpaa stale steer test', ctx);
           await pi.commands.workflow.handler('approve', ctx);
-          const consumed = await pi.events.input({ source: 'interactive', text: staleText }, ctx);
-          console.log(JSON.stringify({ consumed, staleText, phaseTools: pi.activeTools }));
+          console.log(JSON.stringify({ editResult, sentMessages, phaseTools: pi.activeTools }));
         })().catch((error) => { console.error(error.stack || String(error)); process.exit(1); });
         '''
     )
     data = _run_node_runtime(script, tmp_path)
 
-    assert data["consumed"]["action"] == "handled"
-    assert "harness-workflow-steer" in data["staleText"]
+    assert data["editResult"]["block"] is True
+    assert "plan_review 페이즈" in data["editResult"]["reason"]
+    assert all("harness-workflow-steer" not in item["text"] for item in data["sentMessages"])
     assert "write" in data["phaseTools"]
 
 
@@ -611,18 +605,17 @@ def test_stale_code_review_steer_is_consumed_after_phase_advances_to_commit(tmp_
         (async () => {
           await pi.commands.workflow.handler('start stale review steer workflow', ctx);
           await pi.commands.workflow.handler('state code_review', ctx);
-          await pi.events.tool_call({ toolName: 'edit', input: { path: 'src/app.txt', edits: [] } }, ctx);
-          const staleText = sentMessages.find((item) => item.text.includes('code_review 페이즈')).text;
+          const editResult = await pi.events.tool_call({ toolName: 'edit', input: { path: 'src/app.txt', edits: [] } }, ctx);
           await pi.commands.workflow.handler('state commit', ctx);
-          const consumed = await pi.events.input({ source: 'interactive', text: staleText }, ctx);
-          console.log(JSON.stringify({ consumed, staleText, phaseTools: pi.activeTools }));
+          console.log(JSON.stringify({ editResult, sentMessages, phaseTools: pi.activeTools }));
         })().catch((error) => { console.error(error.stack || String(error)); process.exit(1); });
         '''
     )
     data = _run_node_runtime(script, tmp_path)
 
-    assert data["consumed"]["action"] == "handled"
-    assert "harness-workflow-steer" in data["staleText"]
+    assert data["editResult"]["block"] is True
+    assert "code_review 페이즈" in data["editResult"]["reason"]
+    assert all("harness-workflow-steer" not in item["text"] for item in data["sentMessages"])
     assert "workflow_approve" in data["phaseTools"]
 
 
