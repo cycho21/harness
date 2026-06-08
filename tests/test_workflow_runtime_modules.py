@@ -94,7 +94,7 @@ def test_runtime_policy_requires_approval_only_for_mutating_runtime_extension_pa
     assert data["nestedRuntime"] is True
 
 
-def test_runtime_state_restores_latest_matching_guard_tokens_only(tmp_path):
+def test_runtime_state_does_not_restore_persisted_guard_tokens_as_authority(tmp_path):
     script = textwrap.dedent(
         rf'''
         const path = require('path');
@@ -119,16 +119,9 @@ def test_runtime_state_restores_latest_matching_guard_tokens_only(tmp_path):
             pushExecution: {{ workflowId: 'wf-current', issuedAt: 13, reason: 'fallback-push' }},
           }},
         }};
-        const entries = [
-          {{ type: 'custom', customType: mod.HARNESS_TOKEN_TYPES.DPAA, data: {{ workflowId: 'wf-current', issuedAt: 20, reason: 'older', planSha256: 'old' }} }},
-          {{ type: 'custom', customType: mod.HARNESS_TOKEN_TYPES.DPAA, data: {{ workflowId: 'wf-current', issuedAt: 30, reason: 'newer', planSha256: 'new' }} }},
-          {{ type: 'custom', customType: mod.HARNESS_TOKEN_TYPES.CODE_QUALITY, data: {{ workflowId: 'wf-other', issuedAt: 40, reason: 'wrong-workflow' }} }},
-          {{ type: 'custom', customType: mod.HARNESS_TOKEN_TYPES.CODE_REVIEW, data: {{ workflowId: 'wf-current', timestamp: 50, critical: 0, major: 0, minor: 1 }} }},
-          {{ type: 'custom', customType: mod.HARNESS_TOKEN_TYPES.REVIEW_PACKAGE, data: {{ workflowId: 'wf-current', timestamp: 60, critical: 0, major: 0, minor: 0, mainSummary: 'main', reviewerSummary: 'review', qualitySummary: 'quality' }} }},
-        ];
 
-        mod.restoreGuardTokensToRuntimeState(state, entries);
         console.log(JSON.stringify({{
+          hasRestoreExport: typeof mod.restoreGuardTokensToRuntimeState === 'function',
           dpaa: state.dpaaGuardSatisfiedToken,
           codeQuality: state.codeQualityGuardSatisfiedToken,
           codeReview: state.codeReviewGuardSatisfiedToken,
@@ -139,8 +132,9 @@ def test_runtime_state_restores_latest_matching_guard_tokens_only(tmp_path):
     )
     data = _run_node(script, tmp_path)
 
-    assert data["dpaa"] == {"workflowId": "wf-current", "issuedAt": 30, "reason": "newer", "planSha256": "new"}
-    assert data["codeQuality"] == {"workflowId": "wf-current", "issuedAt": 11, "reason": "fallback-quality"}
-    assert data["codeReview"] == {"critical": 0, "major": 0, "minor": 1, "timestamp": 50}
-    assert data["push"] == {"workflowId": "wf-current", "issuedAt": 13, "reason": "fallback-push"}
-    assert data["reviewPackage"]["qualitySummary"] == "quality"
+    assert data["hasRestoreExport"] is False
+    assert data["dpaa"] is None
+    assert data["codeQuality"] is None
+    assert data["codeReview"] is None
+    assert data["push"] is None
+    assert data["reviewPackage"] is None

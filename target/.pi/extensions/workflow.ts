@@ -97,8 +97,6 @@ import { launchInterviewWizard } from "./workflow/interview-ui";
 import {
   createWorkflowRuntimeState,
   HARNESS_TOKEN_TYPES,
-  restoreGuardTokensToRuntimeState,
-  saveGuardTokensToWorkflowState,
 } from "./workflow/runtime-state";
 import {
   colorResultLabel,
@@ -124,13 +122,12 @@ export default function (pi: ExtensionAPI) {
   // Process memory only: the LLM cannot forge this guard evidence through shell/file writes.
   const state = createWorkflowRuntimeState();
 
-  // ── Guard token persistence ──────────────────────────────────────────────
-  // Tokens live in process memory only. Persisting them as CustomEntries lets
-  // them survive session restarts as long as the workflow ID still matches.
+  // ── Guard token audit entries ────────────────────────────────────────────
+  // Runtime guard evidence lives in current process memory only. CustomEntries
+  // are retained for audit/debugging and are never restored as authority.
 
   function persistGuardToken(type: string, data: Record<string, unknown>): void {
-    try { pi.appendEntry(type, { ...data, persistedAt: Date.now() }); } catch { /* non-fatal */ }
-    if (state.workflow) saveGuardTokensToState(state.workflow);
+    try { pi.appendEntry(type, { ...data, persistedAt: Date.now(), auditOnly: true }); } catch { /* non-fatal */ }
   }
 
   /** LLM에게 교정 지시를 주입합니다. 사용자에게 묻지 않고 LLM이 스스로 수정하도록 유도합니다.
@@ -164,14 +161,6 @@ export default function (pi: ExtensionAPI) {
     if (/^Q[A-Z]|^Migration/.test(className)) return false;
     const EXCLUDE = /(Entity|Dto|VO|Vo|Request|Response|Payload|Config|Configuration|Application|Properties|Settings|Exception|Error|Enum|Record|Constants|Constant|Event|Message|Projection|Form)$/i;
     return !EXCLUDE.test(className);
-  }
-
-  function saveGuardTokensToState(workflow: import("./workflow/types").WorkflowInstance): void {
-    try { saveGuardTokensToWorkflowState(state, workflow, saveWorkflow); } catch { /* non-fatal */ }
-  }
-
-  function restoreGuardTokens(entries: readonly { type: string; customType?: string; data?: unknown }[]): void {
-    restoreGuardTokensToRuntimeState(state, entries);
   }
 
   // ── Phase-based tool policy ─────────────────────────────────────────────────
@@ -2346,13 +2335,11 @@ Risk level: ${spec.riskLevel}`,
       return;
     }
 
-    // Restore persisted workflow, guard tokens, and apply tool policy
+    // Restore persisted workflow metadata only; persisted guard entries are audit-only
+    // and must never become runtime authority after a session restart.
     const persisted = loadPersistedWorkflow();
     if (persisted && persisted.phase !== "done" && !state.workflow) {
       state.workflow = persisted;
-    }
-    if (state.workflow) {
-      restoreGuardTokens(ctx.sessionManager.getEntries() as readonly { type: string; customType?: string; data?: unknown }[]);
     }
     applyPhaseToolPolicy(state.workflow?.phase ?? null);
     refreshBoard(ctx);

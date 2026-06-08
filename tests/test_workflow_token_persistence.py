@@ -3,7 +3,7 @@ Tests for guard token persistence and MVP 3 artifact hash binding.
 
 Covers:
 - HARNESS_TOKEN_TYPES constants defined in workflow.ts
-- persistGuardToken / restoreGuardTokens wired in workflow.ts
+- persistGuardToken writes audit-only entries and restore is intentionally absent
 - planSha256 propagated through DPAA gate result
 - advanceWorkflow accepts approvedPlanSha256
 - runPreTransitionGate accepts opts.approvedPlanSha256
@@ -36,12 +36,13 @@ def test_persist_guard_token_function_defined():
     src = WORKFLOW.read_text(encoding="utf-8")
     assert "function persistGuardToken" in src
     assert "pi.appendEntry" in src
+    assert "auditOnly: true" in src
 
 
-def test_restore_guard_tokens_function_defined():
-    src = WORKFLOW.read_text(encoding="utf-8")
-    assert "function restoreGuardTokens" in src
-    assert "sessionManager.getEntries" in src
+def test_restore_guard_tokens_function_absent():
+    src = WORKFLOW.read_text(encoding="utf-8") + RUNTIME_STATE.read_text(encoding="utf-8")
+    assert "function restoreGuardTokens" not in src
+    assert "restoreGuardTokensToRuntimeState" not in src
 
 
 def test_persist_called_on_dpaa_token():
@@ -64,13 +65,12 @@ def test_persist_called_on_review_package_token():
     assert "persistGuardToken(HARNESS_TOKEN_TYPES.REVIEW_PACKAGE" in src
 
 
-def test_restore_called_in_session_start():
+def test_session_start_does_not_restore_persisted_guard_tokens():
     src = WORKFLOW.read_text(encoding="utf-8")
-    assert "restoreGuardTokens" in src
-    # Must appear in session_start handler context
-    session_start_idx = src.index("session_start")
-    restore_idx = src.index("restoreGuardTokens")
-    assert restore_idx > session_start_idx
+    session_start_idx = src.index('pi.on("session_start"')
+    session_start_block = src[session_start_idx:session_start_idx + 2000]
+    assert "getEntries" not in session_start_block
+    assert "audit-only" in session_start_block
 
 
 # ── Task 2: MVP 3 Artifact hash binding ──────────────────────────────────────

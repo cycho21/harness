@@ -59,7 +59,7 @@ harness
 - mechanical reminders 주입
 - extension 수정 시 사용자 승인 요구
 
-Workflow extension 개발 시 `target/.pi/extensions/workflow.ts`는 entrypoint와 상위 조립 계층으로 유지합니다. 새 guard 판단은 `target/.pi/extensions/workflow/gates.ts`, reminder 판단은 `workflow/reminders.ts`, command catalog와 harness repo code-quality 감지는 `workflow/catalog.ts`, state/persistence는 `workflow/state.ts`와 `workflow/storage.ts`에 둡니다. runtime process state, guard token 복원, stale steer metadata는 `workflow/runtime-state.ts`, phase tool policy, runtime extension 수정 승인 판단, `/workflow` 오타 제안은 `workflow/runtime-policy.ts`, footer/board/result box UI helper는 `workflow/runtime-ui.ts`, 일반 UI 유틸리티는 `workflow/ui.ts` 또는 `workflow/interview-ui.ts`에 둡니다. 새 기능을 추가할 때 `workflow.ts`에 업무 로직을 직접 늘리지 말고 먼저 적절한 하위 모듈을 선택합니다.
+Workflow extension 개발 시 `target/.pi/extensions/workflow.ts`는 entrypoint와 상위 조립 계층으로 유지합니다. 새 guard 판단은 `target/.pi/extensions/workflow/gates.ts`, reminder 판단은 `workflow/reminders.ts`, command catalog와 harness repo code-quality 감지는 `workflow/catalog.ts`, state/persistence는 `workflow/state.ts`와 `workflow/storage.ts`에 둡니다. runtime process state와 stale steer metadata는 `workflow/runtime-state.ts`, phase tool policy, runtime extension 수정 승인 판단, `/workflow` 오타 제안은 `workflow/runtime-policy.ts`, footer/board/result box UI helper는 `workflow/runtime-ui.ts`, 일반 UI 유틸리티는 `workflow/ui.ts` 또는 `workflow/interview-ui.ts`에 둡니다. guard token CustomEntry는 audit-only 기록이며 session restart 후 권한으로 복원하지 않습니다. 새 기능을 추가할 때 `workflow.ts`에 업무 로직을 직접 늘리지 말고 먼저 적절한 하위 모듈을 선택합니다.
 
 DPAA와 SBADR은 상호 보완적입니다.
 
@@ -413,7 +413,7 @@ hard guard는 자동 진행 중에도 우회할 수 없습니다.
 
 Guard block 메시지는 `Why blocked`, `Default handling for the LLM`, `Next actions`, 조건부 `Exception path`, `Caution` 순서로 표시됩니다. `Exception path`는 skip 경로가 있는 guard에서만 표시됩니다. `Default handling for the LLM`은 skip-first 금지, 수정 가능한 실패의 원인 수정 후 재시도, 사용자 질문 조건 제한을 먼저 제시합니다. Workspace guard는 파일 수정·workflow state 변경·evidence 시뮬레이션을 금지하고 올바른 directory/branch 복귀를 요청합니다. Policy-scan guard는 위험 변경을 숨기거나 조용히 수정하지 말고 위험 요약과 interactive policy approval path를 제시하도록 안내합니다.
 
-예외적으로 gate를 건너뛰려면 명시적 skip이 필요합니다. 정상 경로에서는 token 발급을 권한 증명으로 삼지 않고, workflow의 현재 phase와 허용된 다음 전이 여부를 기준으로 판단합니다. 사용자가 gate skip을 명시적으로 승인한 경우 LLM은 slash command를 대신 실행할 수 없으므로 `workflow_skip_gate` tool로 동일한 1회성 accepted-risk 예외를 기록할 수 있습니다. 두 경로 모두 TUI 확인창을 거치며, skip 후에는 다시 `workflow_approve`로 전이를 재시도해야 합니다. `/workflow state <phase>`는 phase만 복구하고 DPAA/code review/push guard evidence를 생성하지 않습니다. 대화형 UI가 없는 세션에서는 accepted-risk skip, `/workflow state`, `/workflow abort`처럼 사용자 승인이 필요한 복구/파괴적 명령을 승인하지 않습니다.
+예외적으로 gate를 건너뛰려면 명시적 skip이 필요합니다. 정상 경로에서는 token 발급을 권한 증명으로 삼지 않고, workflow의 현재 phase와 허용된 다음 전이 여부를 기준으로 판단합니다. guard token CustomEntry는 audit-only이며 session restart 뒤 runtime 권한으로 복원하지 않습니다. 사용자가 gate skip을 명시적으로 승인한 경우 LLM은 slash command를 대신 실행할 수 없으므로 `workflow_skip_gate` tool로 동일한 1회성 accepted-risk 예외를 기록할 수 있습니다. 두 경로 모두 TUI 확인창을 거치며, skip 후에는 다시 `workflow_approve`로 전이를 재시도해야 합니다. `/workflow state <phase>`는 phase만 복구하고 DPAA/code review/push guard evidence를 생성하지 않습니다. 대화형 UI가 없는 세션에서는 accepted-risk skip, `/workflow state`, `/workflow abort`처럼 사용자 승인이 필요한 복구/파괴적 명령을 승인하지 않습니다.
 
 ```text
 /workflow skip <dpaa|code-quality|policy-scan> <reason>
