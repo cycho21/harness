@@ -17,6 +17,17 @@ _METRIC_RE = re.compile(
 _NEGATION_RE = re.compile(r"\b(must\s+not|must\s+NOT|should\s+not|shouldn't|mustn't)\b")
 # Prerequisite: "must have <verb>ed"
 _PREREQ_RE = re.compile(r"\bmust\s+have\b")
+# Binary/observable acceptance conditions are precise even without numeric SLOs.
+# Examples: command exits 0, tests pass, file exists/updated, no blockers/errors.
+_BINARY_OBSERVABLE_RE = re.compile(
+    r"\b("
+    r"exits?\s+0|exit\s+code\s+0|passes?|pass(?:es)?\b|"
+    r"exists?|create[ds]?|update[ds]?|remove[ds]?|delete[ds]?|rendered|generated|"
+    r"no(?:\s+\w+){0,4}\s+(?:errors?|failures?|findings?|blockers?|warnings?|diff|changes?)|"
+    r"without\s+(?:errors?|failures?|findings?|blockers?|warnings?)"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
 def _load_rules() -> dict:
@@ -54,8 +65,9 @@ class VerificationLayer(LayerAnalyzer):
                 if len(stripped.split()) < 4:
                     continue
 
-                has_metric = bool(_METRIC_RE.search(sentence))
-                has_threshold = any(p in lower for p in threshold_patterns)
+                has_binary_observable = bool(_BINARY_OBSERVABLE_RE.search(sentence))
+                has_metric = bool(_METRIC_RE.search(sentence)) or has_binary_observable
+                has_threshold = any(p in lower for p in threshold_patterns) or has_binary_observable
 
                 if not has_metric:
                     findings.append(Finding(

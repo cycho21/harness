@@ -20,6 +20,13 @@ def test_good_plan_passes_verification():
     assert result.score == 0
 
 
+def test_binary_observable_acceptance_condition_passes_verification():
+    text = """# Plan\n\n## Acceptance Criteria\n\n- Pass when `python -m pytest tests/test_workflow.py -q` exits 0.\n- Must update README.md and README.en.md.\n- Should produce no code review blockers.\n"""
+    doc = MarkdownParser().parse(text)
+    result = VerificationLayer().analyze(doc)
+    assert result.score == 0
+
+
 def test_finding_includes_suggestion():
     text = (FIXTURES / "bad_plan.md").read_text(encoding="utf-8")
     doc = MarkdownParser().parse(text)

@@ -403,7 +403,7 @@ hard guard는 자동 진행 중에도 우회할 수 없습니다.
 
 | Guard | 위치 | 의미 |
 |---|---|---|
-| DPAA | `plan_review → implement` | 사용자 승인창 표시 전 계획 모호성/검증 가능성 검사. `FAIL`은 `plan`으로 자동 복귀해 수정하고, `WARN`은 advisory로 표시하되 전이는 허용 |
+| DPAA | `plan_review → implement` | 사용자 승인창 표시 전 계획 모호성/검증 가능성 검사. acceptance는 숫자 metric뿐 아니라 `command exits 0`, `tests pass`, `README updated`, `no blockers/errors` 같은 binary/observable 조건도 검증 가능 조건으로 인정합니다. `FAIL`은 `plan`으로 자동 복귀해 수정하고, `WARN`은 advisory로 표시하되 전이는 허용 |
 | Code quality | review package 제출 시 | `codeQualityGuard` 또는 설정된 품질 명령 실행 |
 | Workspace | `git push` | workflow 시작 workspace/branch와 현재 상태 일치 검사 |
 | Push policy scan | `commit → push`, `git push` | 위험 변경 확인 |
