@@ -299,7 +299,7 @@ git push 위험 변경 재확인
 .pi/extensions/** 수정
 ```
 
-`/workflow status`, `/workflow start`, `/workflow load`, `/workflow approve`, `/workflow state <phase>` 출력에는 `[LLM WORKFLOW ACTION]` 블록이 포함됩니다. 이 블록은 현재 phase, 다음 phase, 자동 전이/승인 경계 여부, LLM이 지금 해야 할 일을 명시합니다. 자동 전이 구간이 끝나고 agent가 idle이며 pending message가 없을 때만 extension이 continuation prompt를 한 번 보내 LLM이 현재 phase 작업을 이어가게 합니다. 이 continuation은 승인 경계를 넘지 않고, stale/중복 marker guard로 보호됩니다. phase가 바뀌면 이전 phase의 steer marker를 정리하고, 뒤늦게 도착한 stale steer는 extension/user 입력 source와 무관하게 소비해 과거 `plan_review` 또는 `code_review` 안내가 현재 phase를 덮어쓰지 않게 합니다. 또한 `plan_review`, `code_review`, `review_approved` 같은 read-only phase에서 `write/edit`이 호출되면 follow-up steering을 큐에 넣지 않고 tool call을 즉시 차단하며, workflow continuation도 busy 상태에서는 follow-up queue에 넣지 않아 `Follow-up: ⚠️ ...` 경고나 stale continuation이 TUI에 누적되지 않게 합니다. `push` phase에서 실제 `git push`가 성공하면 bash `tool_result`를 완료 이벤트로 소비해 `push → done`으로 자동 전이합니다. 이때 완료 이력은 저장하되 active workflow는 즉시 해제해 이후 prompt에 과거 phase continuation이 다시 주입되지 않게 합니다. `/workflow state <phase>`는 정상 진행 명령이 아니라 수동 복구 전용입니다. 정상 진행에서 사용자는 `/workflow approve`를 직접 입력하라는 안내를 받지 않고, 승인 경계에서 TUI yes/no 확인창으로 결정합니다. 자동 전이 구간은 사용자 확인 없이 진행됩니다. Workflow approval dashboard는 전환 메타데이터를 안전하게 문자열로 정규화해 일부 값이 비어 있어도 `undefined`를 노출하지 않습니다.
+`/workflow status`, `/workflow start`, `/workflow load`, `/workflow approve`, `/workflow state <phase>` 출력에는 `[LLM WORKFLOW ACTION]` 블록이 포함됩니다. 이 블록은 현재 phase, 다음 phase, 자동 전이/승인 경계 여부, LLM이 지금 해야 할 일을 명시합니다. 자동 전이 구간이 끝나고 agent가 idle이며 pending message가 없을 때만 extension이 continuation prompt를 한 번 보내 LLM이 현재 phase 작업을 이어가게 합니다. 이 continuation은 승인 경계를 넘지 않고, stale/중복 marker guard로 보호됩니다. phase가 바뀌면 이전 phase의 steer marker를 정리하고, 뒤늦게 도착한 stale steer는 extension/user 입력 source와 무관하게 소비해 과거 `plan_review` 또는 `code_review` 안내가 현재 phase를 덮어쓰지 않게 합니다. 또한 `plan_review`, `code_review`, `review_approved` 같은 read-only phase에서 `write/edit`이 호출되면 follow-up steering을 큐에 넣지 않고 tool call을 즉시 차단하며, workflow continuation도 busy 상태에서는 follow-up queue에 넣지 않아 `Follow-up: ⚠️ ...` 경고나 stale continuation이 TUI에 누적되지 않게 합니다. `push` phase에서 실제 `git push`가 성공하면 bash `tool_result`를 완료 이벤트로 소비해 `push → done`으로 자동 전이합니다. `workflow_approve`는 `push → done`을 만들 수 없으며, 실제 push 성공 관측 전에는 active workflow를 유지합니다. 이때 완료 이력은 저장하되 active workflow는 즉시 해제해 이후 prompt에 과거 phase continuation이 다시 주입되지 않게 합니다. `/workflow state <phase>`는 정상 진행 명령이 아니라 수동 복구 전용입니다. 정상 진행에서 사용자는 `/workflow approve`를 직접 입력하라는 안내를 받지 않고, 승인 경계에서 TUI yes/no 확인창으로 결정합니다. 자동 전이 구간은 사용자 확인 없이 진행됩니다. Workflow approval dashboard는 전환 메타데이터를 안전하게 문자열로 정규화해 일부 값이 비어 있어도 `undefined`를 노출하지 않습니다.
 
 `/workflow start <목표>`가 `interview` phase를 시작하면 UI 세션에서는 interview wizard가 자동으로 열립니다. Wizard는 기존 5개 인터뷰 질문을 하나씩 보여주며, 대부분의 질문에서 선택지와 자유입력을 함께 받고 선택 질문은 `모름/건너뛰기`를 허용합니다. 필수 질문은 선택지 또는 자유입력 없이 다음으로 진행할 수 없습니다. Editor 위 progress widget은 현재/완료/남은 질문을 표시하고, footer status는 workflow title, 현재 phase, 다음 phase, 전체 phase progress를 표시합니다. Wizard 중 preview 키로 답변 요약을 볼 수 있으며 마지막 질문 후 같은 요약 preview가 자동 표시됩니다. UI가 없거나 wizard가 취소/실패하면 기존 채팅 기반 interview continuation으로 fallback됩니다.
 
@@ -403,7 +403,7 @@ hard guard는 자동 진행 중에도 우회할 수 없습니다.
 
 | Guard | 위치 | 의미 |
 |---|---|---|
-| DPAA | `plan_review → implement` | 계획 모호성/검증 가능성 검사 |
+| DPAA | `plan_review → implement` | 사용자 승인창 표시 전 계획 모호성/검증 가능성 검사. `FAIL`은 `plan`으로 자동 복귀해 수정하고, `WARN`은 advisory로 표시하되 전이는 허용 |
 | Code quality | review package 제출 시 | `codeQualityGuard` 또는 설정된 품질 명령 실행 |
 | Workspace | `git push` | workflow 시작 workspace/branch와 현재 상태 일치 검사 |
 | Push policy scan | `commit → push`, `git push` | 위험 변경 확인 |
@@ -413,7 +413,7 @@ hard guard는 자동 진행 중에도 우회할 수 없습니다.
 
 Guard block 메시지는 `Why blocked`, `Default handling for the LLM`, `Next actions`, 조건부 `Exception path`, `Caution` 순서로 표시됩니다. `Exception path`는 skip 경로가 있는 guard에서만 표시됩니다. `Default handling for the LLM`은 skip-first 금지, 수정 가능한 실패의 원인 수정 후 재시도, 사용자 질문 조건 제한을 먼저 제시합니다. Workspace guard는 파일 수정·workflow state 변경·evidence 시뮬레이션을 금지하고 올바른 directory/branch 복귀를 요청합니다. Policy-scan guard는 위험 변경을 숨기거나 조용히 수정하지 말고 위험 요약과 interactive policy approval path를 제시하도록 안내합니다.
 
-예외적으로 gate를 건너뛰려면 명시적 skip이 필요합니다. 정상 경로에서는 token 발급을 권한 증명으로 삼지 않고, workflow의 현재 phase와 허용된 다음 전이 여부를 기준으로 판단합니다. 사용자가 gate skip을 명시적으로 승인한 경우 LLM은 slash command를 대신 실행할 수 없으므로 `workflow_skip_gate` tool로 동일한 1회성 accepted-risk 예외를 기록할 수 있습니다. 두 경로 모두 TUI 확인창을 거치며, skip 후에는 다시 `workflow_approve`로 전이를 재시도해야 합니다.
+예외적으로 gate를 건너뛰려면 명시적 skip이 필요합니다. 정상 경로에서는 token 발급을 권한 증명으로 삼지 않고, workflow의 현재 phase와 허용된 다음 전이 여부를 기준으로 판단합니다. 사용자가 gate skip을 명시적으로 승인한 경우 LLM은 slash command를 대신 실행할 수 없으므로 `workflow_skip_gate` tool로 동일한 1회성 accepted-risk 예외를 기록할 수 있습니다. 두 경로 모두 TUI 확인창을 거치며, skip 후에는 다시 `workflow_approve`로 전이를 재시도해야 합니다. 대화형 UI가 없는 세션에서는 accepted-risk skip, `/workflow state`, `/workflow abort`처럼 사용자 승인이 필요한 복구/파괴적 명령을 승인하지 않습니다.
 
 ```text
 /workflow skip <dpaa|code-quality|policy-scan> <reason>

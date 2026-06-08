@@ -159,7 +159,43 @@ def test_workflow_extension_runtime_state_outputs_single_llm_action_block(tmp_pa
     assert "manual recovery only" in data["stateNotification"]
 
 
-def test_workflow_extension_runtime_clears_active_workflow_after_done(tmp_path):
+def test_workflow_extension_runtime_push_approve_does_not_complete_without_git_push(tmp_path):
+    script = textwrap.dedent(
+        r'''
+        const path = require('path');
+        const { createJiti } = require('jiti');
+        process.chdir('target');
+
+        const pi = { events: {}, commands: {}, tools: {}, on(name, fn) { this.events[name] = fn; }, registerCommand(name, spec) { this.commands[name] = spec; }, registerTool(spec) { this.tools[spec.name] = spec; } };
+        const jiti = createJiti(path.resolve('runtime-test.js'), { interopDefault: false });
+        jiti(path.resolve('.pi/extensions/workflow.ts')).default(pi);
+
+        const notifications = [];
+        const ctx = { hasUI: true, ui: { notify: (text, level) => notifications.push({ text, level }), confirm: async () => true } };
+
+        (async () => {
+          await pi.commands.workflow.handler('start Runtime push approve no done', ctx);
+          await pi.commands.workflow.handler('state push', ctx);
+          await pi.commands.workflow.handler('approve', ctx);
+          await pi.commands.workflow.handler('status', ctx);
+          const prompt = await pi.events.before_agent_start({ systemPrompt: 'base' });
+          console.log(JSON.stringify({
+            notifications: notifications.map((item) => item.text),
+            prompt: prompt.systemPrompt,
+          }));
+        })().catch((error) => { console.error(error.stack || String(error)); process.exit(1); });
+        '''
+    )
+    data = _run_node_runtime(script, tmp_path)
+    joined = "\n".join(data["notifications"])
+
+    assert "requires an observed successful git push" in joined
+    assert "Workflow 전이: push → done" not in joined
+    assert "Current phase: push" in joined
+    assert "Current phase: push" in data["prompt"]
+
+
+def test_workflow_extension_runtime_clears_active_workflow_after_successful_git_push(tmp_path):
     script = textwrap.dedent(
         r'''
         const path = require('path');
@@ -176,7 +212,7 @@ def test_workflow_extension_runtime_clears_active_workflow_after_done(tmp_path):
         (async () => {
           await pi.commands.workflow.handler('start Runtime done cleanup', ctx);
           await pi.commands.workflow.handler('state push', ctx);
-          await pi.commands.workflow.handler('approve', ctx);
+          await pi.events.tool_result({ toolName: 'bash', input: { command: 'git push origin HEAD' }, isError: false, content: [], details: {} }, ctx);
           await pi.commands.workflow.handler('status', ctx);
           const prompt = await pi.events.before_agent_start({ systemPrompt: 'base' });
           console.log(JSON.stringify({
@@ -668,3 +704,66 @@ def test_workflow_skip_gate_tool_allows_llm_to_record_interactive_skip_and_advan
     assert "plan_review → implement" in data["approved"]["transitions"]
     assert any("Workflow gate skip 승인 확인" in item for item in data["confirms"])
     assert "workflow_approve" in data["phaseTools"] or "submit_review_package" in data["phaseTools"]
+
+
+def test_no_ui_blocks_accepted_risk_and_destructive_workflow_commands(tmp_path):
+    script = textwrap.dedent(
+        r'''
+        const path = require('path');
+        const { createJiti } = require('jiti');
+        process.chdir('target');
+
+        const notifications = [];
+        const pi = {
+          events: {}, commands: {}, tools: {},
+          on(name, fn) { this.events[name] = fn; },
+          registerCommand(name, spec) { this.commands[name] = spec; },
+          registerTool(spec) { this.tools[spec.name] = spec; },
+          sendUserMessage() {},
+          getAllTools() { return [
+            { name: 'read', sourceInfo: { source: 'builtin' } },
+            { name: 'write', sourceInfo: { source: 'builtin' } },
+            { name: 'edit', sourceInfo: { source: 'builtin' } },
+            { name: 'bash', sourceInfo: { source: 'builtin' } },
+            ...Object.keys(this.tools).map((name) => ({ name, sourceInfo: { source: 'extension' } })),
+          ]; },
+          setActiveTools(names) { this.activeTools = names; },
+        };
+        const jiti = createJiti(path.resolve('runtime-test.js'), { interopDefault: false });
+        jiti(path.resolve('.pi/extensions/workflow.ts')).default(pi);
+
+        const ctx = {
+          hasUI: false,
+          hasPendingMessages: () => false,
+          isIdle: () => false,
+          ui: {
+            notify: (text, level) => notifications.push({ text, level }),
+            confirm: async () => { throw new Error('confirm must not be called without UI'); },
+            setStatus: () => {},
+            setWidget: () => {},
+          },
+        };
+
+        (async () => {
+          await pi.commands.workflow.handler('start no ui dangerous commands', ctx);
+          const skipTool = await pi.tools.workflow_skip_gate.execute('skip-no-ui', {
+            gate: 'dpaa',
+            reason: 'no ui must not auto-approve accepted risk',
+          }, undefined, undefined, ctx);
+          await pi.commands.workflow.handler('skip dpaa no-ui-slash-skip', ctx);
+          await pi.commands.workflow.handler('state implement', ctx);
+          await pi.commands.workflow.handler('abort', ctx);
+          await pi.commands.workflow.handler('status', ctx);
+          console.log(JSON.stringify({ skipTool: skipTool.details, notifications: notifications.map((item) => item.text) }));
+        })().catch((error) => { console.error(error.stack || String(error)); process.exit(1); });
+        '''
+    )
+    data = _run_node_runtime(script, tmp_path)
+    joined = "\n".join(data["notifications"])
+
+    assert data["skipTool"]["ok"] is False
+    assert data["skipTool"]["reason"] == "no-ui"
+    assert "대화형 UI가 없어 gate skip을 승인할 수 없습니다" in joined
+    assert "대화형 UI가 없어 workflow state 수동 복구를 승인할 수 없습니다" in joined
+    assert "대화형 UI가 없어 workflow 종료를 승인할 수 없습니다" in joined
+    assert "Current phase: interview" in joined

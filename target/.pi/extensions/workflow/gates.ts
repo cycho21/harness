@@ -560,15 +560,43 @@ export function runDpaaGate(workflow: WorkflowInstance, from: WorkflowPhase, to:
     // ── end SBADR ─────────────────────────────────────────────────────────────
   }
 
+  const findings = report.findings.slice(0, 5).map((finding, index) => {
+    const line = finding.line ? `line ${finding.line}` : "line unknown";
+    return `${index + 1}. [${finding.layer}/${finding.rule}] ${line}: ${finding.message}\n   → ${finding.suggestion}`;
+  });
+
+  if (report.level === "WARN") {
+    return {
+      ok: true,
+      message: [
+        "DPAA advisory: WARN findings detected before implementation.",
+        "The workflow may proceed, but the LLM should repair these findings when the rewrite does not change business intent.",
+        table([
+          ["Item", "Value"],
+          ["Verdict", report.level],
+          ["Penalty", String(report.overall)],
+          ["Plan", path.relative(process.cwd(), checkedPlanPath)],
+          ["Receipt", receipt ? `${receipt.timestamp} / ${receipt.planSha256.slice(0, 12)}` : "not saved"],
+          ["Snapshot", snapshot ? snapshot.version : "none"],
+        ]),
+        "",
+        "Top Findings",
+        "──────────────────────────────────────",
+        ...findings,
+      ].join("\n"),
+      planSha256: sha256File(checkedPlanPath),
+    };
+  }
+
   writeFieldLogEvent({
     type: "gate.failed",
     category: "dpaa",
-    severity: report.level === "FAIL" ? "blocker" : "major",
+    severity: "blocker",
     workflow,
     fromPhase: from,
     toPhase: to,
     summary: `DPAA returned ${report.level} before implementation.`,
-    expected: "DPAA PASS is required before plan_review → implement.",
+    expected: "DPAA FAIL blocks plan_review → implement.",
     actual: `DPAA level=${report.level}, penalty=${report.overall}, findings=${report.findings.length}`,
     impact: "Implementation is blocked until the plan/spec ambiguity is resolved or explicitly skipped.",
     primaryMessage: report.findings[0]?.message ?? `DPAA returned ${report.level}`,
@@ -578,11 +606,6 @@ export function runDpaaGate(workflow: WorkflowInstance, from: WorkflowPhase, to:
     files: [{ path: checkedPlanPath, role: "input" }],
     logExcerpt: report.findings.slice(0, 5).map((finding) => `[${finding.layer}/${finding.rule}] ${finding.message} -> ${finding.suggestion}`).join("\n"),
     improvementKind: "dpaa-rule",
-  });
-
-  const findings = report.findings.slice(0, 5).map((finding, index) => {
-    const line = finding.line ? `line ${finding.line}` : "line unknown";
-    return `${index + 1}. [${finding.layer}/${finding.rule}] ${line}: ${finding.message}\n   → ${finding.suggestion}`;
   });
 
   return {

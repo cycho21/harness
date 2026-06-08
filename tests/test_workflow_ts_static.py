@@ -311,6 +311,23 @@ class TestGateMessageLanguage:
         assert "Fix the underlying cause within the current phase when possible" in src
         assert "Ask the user only for product/architecture input" in src
 
+    def test_dpaa_precheck_runs_before_user_approval_dialog(self):
+        src = _workflow_src()
+        precheck = src.index("precheckPlanReviewBeforeApproval(ctx)")
+        confirm = src.index("ctx.ui.confirm(\n          params.summary")
+        assert precheck < confirm
+        assert "DPAA precheck failed before user approval" in src
+        assert "transitionWorkflow(state.workflow, \"plan\", \"dpaa_precheck_repair_required\")" in src
+
+    def test_dpaa_warn_is_advisory_not_hard_block(self):
+        src = _src("gates.ts")
+        warn = src.index('if (report.level === "WARN")')
+        fail_log = src.index('severity: "blocker"', warn)
+        assert warn < fail_log
+        warn_block = src[warn:fail_log]
+        assert "ok: true" in warn_block
+        assert "DPAA advisory: WARN findings detected before implementation" in warn_block
+
 
 # ---------------------------------------------------------------------------
 # reminders.ts — all English (LLM-injected)

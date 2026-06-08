@@ -59,6 +59,9 @@ export async function advanceWorkflow(
 
   while (true) {
     const from = workflow.phase;
+    if (from === "push") {
+      return { ok: false, message: "Push phase requires an observed successful git push. Run git push; the workflow will advance to done only after the push succeeds." };
+    }
     const next = getNextPhase(from);
     if (!next) {
       if (transitions.length === 0) return { ok: false, message: `이미 마지막 단계입니다: ${workflow.phase}` };

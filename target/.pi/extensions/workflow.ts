@@ -65,6 +65,7 @@ import {
   writeFieldLogEvent,
   validateWorkflowWorkspace,
   transitionWorkflow,
+  runPreTransitionGate,
   isSharedWorkflowPhase,
   sharedWorkflowPhases,
   isSharedAutoAdvancePhase,
@@ -283,7 +284,8 @@ export default function (pi: ExtensionAPI) {
     const trimmedReason = reason.trim();
     if (!trimmedReason) return { ok: false, gate, reason: "missing-reason" };
     const failures = state.gateFailures.get(gate) ?? 0;
-    const ok = !ctx?.hasUI || (await ctx.ui.confirm(
+    if (!ctx?.hasUI) return { ok: false, gate, reason: "no-ui" };
+    const ok = await ctx.ui.confirm(
       "Workflow gate skip 승인 확인",
       [
         `${gate} gate를 1회 예외 처리합니다.`,
@@ -294,9 +296,12 @@ export default function (pi: ExtensionAPI) {
         "",
         "이 skip은 accepted-risk로 기록되며 10분 TTL의 1회성 예외입니다.",
       ].join("\n"),
-    ));
+    );
     if (!ok) return { ok: false, gate, reason: "user-declined" };
     addSkipToken(gate, trimmedReason);
+    if (gate === "dpaa" && state.workflow) {
+      state.dpaaGuardSatisfiedToken = { workflowId: state.workflow.id, issuedAt: Date.now(), reason: "skip-preapproved" };
+    }
     state.gateFailures.delete(gate);
     clearPendingWorkflowSteersForPhase(state.workflow?.id, gate === "dpaa" ? "plan_review" : gate === "code-quality" ? "code_review" : "commit");
     writeFieldLogEvent({
@@ -320,6 +325,43 @@ export default function (pi: ExtensionAPI) {
     if (!text) return;
     const marker = extractWorkflowContinuationMarker(text);
     if (marker && state.workflowContinuationPending?.marker === marker) state.workflowContinuationPending = null;
+  }
+
+  async function returnToPlanAfterDpaaBlock(ctx: any, message: string): Promise<string> {
+    if (!state.workflow || state.workflow.phase !== "plan_review") return message;
+    const workflowId = state.workflow.id;
+    const failures = (state.gateFailures.get("dpaa") ?? 0) + 1;
+    state.gateFailures.set("dpaa", failures);
+    state.dpaaGuardSatisfiedToken = null;
+    transitionWorkflow(state.workflow, "plan", "dpaa_precheck_repair_required");
+    saveWorkflow(state.workflow);
+    clearPendingWorkflowSteersForPhase(workflowId, "plan_review");
+    applyPhaseToolPolicy("plan");
+    refreshBoard(ctx);
+    refreshStatus(ctx);
+    await steerLlm(
+      "DPAA precheck failed before showing the implementation approval dialog. " +
+      "The workflow has returned to plan so you can repair the plan artifacts, then retry workflow_approve.\n\n" +
+      message.slice(0, 1200),
+    );
+    return [
+      "DPAA precheck failed before user approval. The workflow returned to plan so the LLM can repair the plan and retry.",
+      "",
+      message,
+      "",
+      formatWorkflowAction(state.workflow),
+    ].join("\n");
+  }
+
+  async function precheckPlanReviewBeforeApproval(ctx: any): Promise<{ ok: true } | { ok: false; text: string }> {
+    if (!state.workflow || state.workflow.phase !== "plan_review") return { ok: true };
+    if (state.dpaaGuardSatisfiedToken?.workflowId === state.workflow.id && state.dpaaGuardSatisfiedToken.reason === "skip-preapproved") return { ok: true };
+    const result = await runPreTransitionGate(state.workflow, "plan_review", "implement", { approvedPlanSha256: state.dpaaGuardSatisfiedToken?.planSha256 });
+    if (result.ok) return { ok: true };
+    if (result.gate === "dpaa") {
+      return { ok: false, text: await returnToPlanAfterDpaaBlock(ctx, result.message) };
+    }
+    return { ok: false, text: result.message };
   }
 
   function clearActiveWorkflowAfterCompletion(): void {
@@ -727,6 +769,11 @@ Risk level: ${spec.riskLevel}`,
       }
 
       // Pre-flight checks before showing any dialog — fail fast with a clear message
+      const planReviewPrecheck = await precheckPlanReviewBeforeApproval(ctx);
+      if (!planReviewPrecheck.ok) {
+        return { content: [{ type: "text", text: planReviewPrecheck.text }], details: { ok: false, reason: "dpaa-precheck-failed" } };
+      }
+
       if (state.workflow.phase === "code_review" && state.reviewPackageToken?.workflowId !== state.workflow.id) {
         return {
           content: [{ type: "text", text: "⚠️ submit_review_package를 먼저 호출해야 합니다. 자기 리뷰, 독립 리뷰어 리뷰, quality gate를 완료한 후 submit_review_package를 호출하세요." }],
@@ -1541,6 +1588,11 @@ Risk level: ${spec.riskLevel}`,
           ctx.ui.notify("Interactive UI is required for this approval boundary so the yes/no dialog can be shown.", "warning");
           return;
         }
+        const slashPlanReviewPrecheck = await precheckPlanReviewBeforeApproval(ctx);
+        if (!slashPlanReviewPrecheck.ok) {
+          ctx.ui.notify(slashPlanReviewPrecheck.text, "warning");
+          return;
+        }
         if (state.workflow?.phase === "commit" && !(await confirmPushPolicyForPushPhase(ctx))) return;
         if (state.workflow && requiresUserApproval && state.workflow.phase !== "commit") {
           const ok = await ctx.ui.confirm(
@@ -1761,7 +1813,11 @@ Risk level: ${spec.riskLevel}`,
           return;
         }
         const failures2 = state.gateFailures.get(gate) ?? 0;
-        const ok = !ctx.hasUI || (await ctx.ui.confirm(
+        if (!ctx.hasUI) {
+          ctx.ui.notify("대화형 UI가 없어 gate skip을 승인할 수 없습니다. UI 세션에서 다시 시도하세요.", "warning");
+          return;
+        }
+        const ok = await ctx.ui.confirm(
           "Workflow gate skip 승인 확인",
           [
             `[${gate}] gate를 1회 건너뛰겠습니까?`,
@@ -1773,9 +1829,12 @@ Risk level: ${spec.riskLevel}`,
             "예: 다음 1회에 한해 해당 gate 예외를 허용합니다 (TTL 10분).",
             "아니오: gate를 유지합니다.",
           ].join("\n"),
-        ));
+        );
         if (!ok) return;
         addSkipToken(gate, reason);
+        if (gate === "dpaa" && state.workflow) {
+          state.dpaaGuardSatisfiedToken = { workflowId: state.workflow.id, issuedAt: Date.now(), reason: "skip-preapproved" };
+        }
         state.gateFailures.delete(gate);
         writeFieldLogEvent({
           type: "gate.skipped",
@@ -1799,7 +1858,11 @@ Risk level: ${spec.riskLevel}`,
           ctx.ui.notify("진행 중인 workflow가 없습니다.", "info");
           return;
         }
-        const ok = !ctx.hasUI || (await ctx.ui.confirm(
+        if (!ctx.hasUI) {
+          ctx.ui.notify("대화형 UI가 없어 workflow 종료를 승인할 수 없습니다. UI 세션에서 다시 시도하세요.", "warning");
+          return;
+        }
+        const ok = await ctx.ui.confirm(
           "Workflow 종료 승인 확인",
           [
             `현재 workflow(${state.workflow.phase})를 종료하시겠습니까?`,
@@ -1807,7 +1870,7 @@ Risk level: ${spec.riskLevel}`,
             "예: in-memory workflow를 종료하고 persisted 참고 기록도 삭제합니다.",
             "아니오: workflow를 유지합니다.",
           ].join("\n"),
-        ));
+        );
         if (!ok) return;
         cancelWorkflowContinuationPending();
         state.workflow = null;
@@ -1875,7 +1938,11 @@ Risk level: ${spec.riskLevel}`,
           push: "DPAA, code quality, code review, commit approval이 완료되어 push 단계라고 확인하고 transition evidence를 복구합니다.",
           done: "workflow가 완료되었다고 표시합니다. 실행 evidence는 복구하지 않습니다.",
         };
-        const ok = !ctx.hasUI || (await ctx.ui.confirm(
+        if (!ctx.hasUI) {
+          ctx.ui.notify("대화형 UI가 없어 workflow state 수동 복구를 승인할 수 없습니다. UI 세션에서 다시 시도하세요.", "warning");
+          return;
+        }
+        const ok = await ctx.ui.confirm(
           "Workflow state 수동 변경 승인 확인",
           [
             `workflow memory 상태를 '${next}' 단계로 변경하시겠습니까?`,
@@ -1887,7 +1954,7 @@ Risk level: ${spec.riskLevel}`,
             "",
             "주의: 이 명령은 사용자의 명시적 복구 승인으로 간주됩니다. 자동 파일 복구는 여전히 신뢰하지 않습니다.",
           ].join("\n"),
-        ));
+        );
         if (!ok) return;
         cancelWorkflowContinuationPending();
         if (!state.workflow) state.workflow = createWorkflow("manual");
