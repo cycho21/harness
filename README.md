@@ -272,7 +272,7 @@ interview
 → done
 ```
 
-현재 승인 모델은 “모든 phase마다 승인”이 아니라 **위험 경계에서만 승인**하는 구조입니다. Guard가 전이를 막으면 메시지에 LLM 기본 처리 방침을 함께 표시합니다. 기본값은 사용자에게 skip을 먼저 요청하지 않고 현재 phase 안에서 원인을 수정한 뒤 전이를 재시도하는 것입니다. 사용자 확인은 제품/아키텍처 판단, 승인 경계, accepted-risk 예외가 필요한 경우에만 요구합니다.
+현재 승인 모델은 “모든 phase마다 승인”이 아니라 **위험 경계에서만 승인**하는 구조입니다. Guard가 전이를 막으면 메시지에 LLM 기본 처리 방침을 함께 표시합니다. 기본값은 사용자에게 skip을 먼저 요청하지 않고 현재 phase 안에서 원인을 수정한 뒤 전이를 재시도하는 것입니다. 사용자 확인은 제품/아키텍처 판단, 승인 경계, accepted-risk 예외가 필요한 경우에만 요구합니다. 1차 표준화 범위는 전이 guard 메시지(`gates.ts`)와 관련 workflow 실패/steer 문구, 정적 테스트, README 한/영 문서입니다. AGENTS.md, `.pi/WORKFLOW.md`, `.harness/workflow-policy.json`, tool/phase policy 차단 메시지 전체 정리는 2차 후속 작업으로 분리합니다.
 
 ### 자동 진행 구간
 
@@ -410,6 +410,8 @@ hard guard는 자동 진행 중에도 우회할 수 없습니다.
 | Push phase | `git push` | 현재 workflow phase가 `push`인지 검사 |
 | Review completion | `code_review → review_approved`, `commit → push` | review package/quality gate와 순차 전이 이력으로 검사 |
 | Extension modification approval | `.pi/extensions/**` 수정 | 사용자 승인 없는 extension 수정 차단 |
+
+Guard block 메시지는 `Why blocked`, `Default handling for the LLM`, `Next actions`, 조건부 `Exception path`, `Caution` 순서로 표시됩니다. `Exception path`는 skip 경로가 있는 guard에서만 표시됩니다. `Default handling for the LLM`은 skip-first 금지, 수정 가능한 실패의 원인 수정 후 재시도, 사용자 질문 조건 제한을 먼저 제시합니다. Workspace guard는 파일 수정·workflow state 변경·evidence 시뮬레이션을 금지하고 올바른 directory/branch 복귀를 요청합니다. Policy-scan guard는 위험 변경을 숨기거나 조용히 수정하지 말고 위험 요약과 interactive policy approval path를 제시하도록 안내합니다.
 
 예외적으로 gate를 건너뛰려면 명시적 skip이 필요합니다. 정상 경로에서는 token 발급을 권한 증명으로 삼지 않고, workflow의 현재 phase와 허용된 다음 전이 여부를 기준으로 판단합니다. 사용자가 gate skip을 명시적으로 승인한 경우 LLM은 slash command를 대신 실행할 수 없으므로 `workflow_skip_gate` tool로 동일한 1회성 accepted-risk 예외를 기록할 수 있습니다. 두 경로 모두 TUI 확인창을 거치며, skip 후에는 다시 `workflow_approve`로 전이를 재시도해야 합니다.
 

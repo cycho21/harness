@@ -817,7 +817,7 @@ Risk level: ${spec.riskLevel}`,
         }
         refreshBoard(ctx);
         refreshStatus(ctx);
-        return { content: [{ type: "text", text: `Workflow transition was requested, but it was blocked by a workflow gate.\nInteractive user approval was received, but transition was blocked by guard validation.\n\n${result.message}` }], details: { ok: false, reason: "gate-blocked" } };
+        return { content: [{ type: "text", text: `Workflow transition was requested, but it was blocked by a workflow gate.\nInteractive user approval was received, but transition was blocked by guard validation.\nDefault handling: do not ask the user for a skip first. Fix the underlying cause within the current phase when possible, then retry the workflow transition. Ask the user only for product/architecture input, an approval boundary, or an accepted-risk exception.\n\n${result.message}` }], details: { ok: false, reason: "gate-blocked" } };
       }
 
       const transitions = result.transitions ?? [];
@@ -1560,7 +1560,7 @@ Risk level: ${spec.riskLevel}`,
           if (result.gate) { state.gateFailures.set(result.gate, (state.gateFailures.get(result.gate) ?? 0) + 1); }
           refreshBoard(ctx);
           refreshStatus(ctx);
-          ctx.ui.notify(["Workflow transition was requested, but it was blocked by a workflow gate.", "", result.message, "", formatWorkflowAction(state.workflow)].join("\n"), "warning");
+          ctx.ui.notify(["Workflow transition was requested, but it was blocked by a workflow gate.", "Default handling: do not ask the user for a skip first. Fix the underlying cause within the current phase when possible, then retry the workflow transition. Ask the user only for product/architecture input, an approval boundary, or an accepted-risk exception.", "", result.message, "", formatWorkflowAction(state.workflow)].join("\n"), "warning");
           return;
         }
         const transitions = result.transitions ?? [];

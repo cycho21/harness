@@ -278,6 +278,39 @@ class TestGateMessageLanguage:
         assert "최근 출력" not in src
         assert "Recent output" in src
 
+    def test_guard_block_default_handling_contract(self):
+        src = _src("gates.ts")
+        assert "Default handling for the LLM" in src
+        assert "Do not ask the user to skip this gate as the first response" in src
+        assert "fix the underlying cause and retry the workflow transition" in src
+        assert "Ask the user only when the fix requires product/architecture input" in src
+
+    def test_guard_block_section_order(self):
+        src = _src("gates.ts")
+        body = src[src.index("export function formatGateBlocked"):]
+        ordered = [
+            '"Why blocked:"',
+            '"Default handling for the LLM:"',
+            '"Next actions:"',
+            '"Exception path:"',
+            '"Caution:"',
+        ]
+        positions = [body.index(item) for item in ordered]
+        assert positions == sorted(positions)
+
+    def test_guard_specific_handling_overrides(self):
+        src = _src("gates.ts")
+        assert "Do not try to satisfy this gate by editing files" in src
+        assert "changing workflow state, or simulating evidence" in src
+        assert "Do not silently fix or hide risky changes" in src
+        assert "interactive policy approval path" in src
+
+    def test_workflow_gate_blocked_message_reinforces_default_handling(self):
+        src = _workflow_src()
+        assert "Default handling: do not ask the user for a skip first" in src
+        assert "Fix the underlying cause within the current phase when possible" in src
+        assert "Ask the user only for product/architecture input" in src
+
 
 # ---------------------------------------------------------------------------
 # reminders.ts — all English (LLM-injected)
