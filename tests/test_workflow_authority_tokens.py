@@ -36,7 +36,8 @@ def test_manual_state_and_abort_have_explicit_yes_no_confirm_copy():
 
 
 def test_policy_approval_audit_and_natural_approval_messages_are_explicit():
-    text = WORKFLOW_EXTENSION.read_text(encoding="utf-8")
+    gate_runner = ROOT / "target" / ".pi" / "extensions" / "workflow" / "gate-runner.ts"
+    text = WORKFLOW_EXTENSION.read_text(encoding="utf-8") + gate_runner.read_text(encoding="utf-8")
 
     assert "state.policyApprovals.push" in text
     assert "Interactive user approval advanced the workflow" in text

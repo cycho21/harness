@@ -42,7 +42,6 @@ import {
   formatWorkflowPrompt,
   formatWorkflowAction,
   formatWorkflowStatus,
-  formatWorkspaceCheckpoints,
   formatWorkspaceMismatch,
   getBranch,
   getGitRoot,
@@ -52,20 +51,15 @@ import {
   isGitPush,
   getNextPhase,
   loadPersistedWorkflow,
-  resolveWorkspaceCheckpoint,
-  restoreWorkspaceCheckpoint,
   saveWorkflow,
   scanWorkflowReminders,
   scanPushPolicy,
   scanWorkflowPrerequisites,
   shouldOfferInputCheckpoint,
   shortInputReason,
-  undoWorkflow,
-  redoWorkflow,
   writeFieldLogEvent,
   validateWorkflowWorkspace,
   transitionWorkflow,
-  runPreTransitionGate,
   isSharedWorkflowPhase,
   sharedWorkflowPhases,
   isSharedAutoAdvancePhase,
@@ -76,10 +70,6 @@ import {
   sha256File,
   findPlanForDpaa,
   getCatalogCommand,
-  getCatalogCommandsForPhase,
-  isPhaseAllowed,
-  runCatalogCommand,
-  formatCatalogCommandResult,
   PHASE_ALLOWED_BUILTIN_TOOLS,
   validateEditPath,
   computeBaseFileHashes,
@@ -87,7 +77,6 @@ import {
   applyProposedEdit,
   formatEditScopeDiff,
   createEditScope,
-  COMMAND_CATALOG,
   type EditScope,
   type ProposedEdit,
   type WorkflowInstance,
@@ -111,6 +100,24 @@ import {
   requiresExtensionMutationApproval,
   suggestWorkflowCommandTypo,
 } from "./workflow/runtime-policy";
+import {
+  executeWorkflowApproval,
+  precheckPlanReviewBeforeApproval as runPlanReviewPrecheck,
+} from "./workflow/transitions";
+import {
+  returnToPlanAfterDpaaBlock as returnToPlanAfterDpaaBlockWithDeps,
+} from "./workflow/gate-runner";
+import {
+  createManualWorkspaceCheckpoint,
+  formatManualWorkspaceCheckpoints,
+  redoManualWorkflowCheckpoint,
+  restoreManualWorkspaceCheckpoint,
+  undoManualWorkflowCheckpoint,
+} from "./workflow/checkpoint-commands";
+import {
+  executeWorkflowCatalogCommand,
+  formatWorkflowToolsListing,
+} from "./workflow/command-policy";
 
 // This file lives at: <harness-root>/.pi/extensions/workflow.ts
 const HARNESS_ROOT = path.resolve(__dirname, "../..");
@@ -317,40 +324,25 @@ export default function (pi: ExtensionAPI) {
   }
 
   async function returnToPlanAfterDpaaBlock(ctx: any, message: string): Promise<string> {
-    if (!state.workflow || state.workflow.phase !== "plan_review") return message;
-    const workflowId = state.workflow.id;
-    const failures = (state.gateFailures.get("dpaa") ?? 0) + 1;
-    state.gateFailures.set("dpaa", failures);
-    state.dpaaGuardSatisfiedToken = null;
-    transitionWorkflow(state.workflow, "plan", "dpaa_precheck_repair_required");
-    saveWorkflow(state.workflow);
-    clearPendingWorkflowSteersForPhase(workflowId, "plan_review");
-    applyPhaseToolPolicy("plan");
-    refreshBoard(ctx);
-    refreshStatus(ctx);
-    await steerLlm(
-      "DPAA precheck failed before showing the implementation approval dialog. " +
-      "The workflow has returned to plan so you can repair the plan artifacts, then retry workflow_approve.\n\n" +
-      message.slice(0, 1200),
-    );
-    return [
-      "DPAA precheck failed before user approval. The workflow returned to plan so the LLM can repair the plan and retry.",
-      "",
-      message,
-      "",
-      formatWorkflowAction(state.workflow),
-    ].join("\n");
+    if (state.workflow?.phase === "plan_review") {
+      const workflowId = state.workflow.id;
+      const failures = (state.gateFailures.get("dpaa") ?? 0) + 1;
+      state.gateFailures.set("dpaa", failures);
+      state.dpaaGuardSatisfiedToken = null;
+      clearPendingWorkflowSteersForPhase(workflowId, "plan_review");
+      applyPhaseToolPolicy("plan");
+    }
+    return returnToPlanAfterDpaaBlockWithDeps(state, ctx, message, {
+      transitionWorkflow,
+      saveWorkflow,
+      refreshBoard,
+      refreshStatus,
+      steerLlm,
+    });
   }
 
   async function precheckPlanReviewBeforeApproval(ctx: any): Promise<{ ok: true } | { ok: false; text: string }> {
-    if (!state.workflow || state.workflow.phase !== "plan_review") return { ok: true };
-    if (state.dpaaGuardSatisfiedToken?.workflowId === state.workflow.id && state.dpaaGuardSatisfiedToken.reason === "skip-preapproved") return { ok: true };
-    const result = await runPreTransitionGate(state.workflow, "plan_review", "implement", { approvedPlanSha256: state.dpaaGuardSatisfiedToken?.planSha256 });
-    if (result.ok) return { ok: true };
-    if (result.gate === "dpaa") {
-      return { ok: false, text: await returnToPlanAfterDpaaBlock(ctx, result.message) };
-    }
-    return { ok: false, text: result.message };
+    return runPlanReviewPrecheck(state, ctx, returnToPlanAfterDpaaBlock);
   }
 
   function clearActiveWorkflowAfterCompletion(): void {
@@ -640,55 +632,7 @@ export default function (pi: ExtensionAPI) {
       reason: Type.Optional(Type.String({ description: "Why this command is being run (for audit log)" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const spec = getCatalogCommand(params.commandId);
-      if (!spec) {
-        const available = COMMAND_CATALOG.map((s) => `${s.id} — ${s.description}`).join("\n");
-        return {
-          content: [{ type: "text", text: `Unknown command ID: "${params.commandId}".
-Available:
-${available}` }],
-          details: { ok: false, reason: "unknown-command" },
-        };
-      }
-
-      const phase = state.workflow?.phase ?? null;
-      if (phase && !isPhaseAllowed(spec, phase)) {
-        const allowed = getCatalogCommandsForPhase(phase).map((s) => s.id).join(", ") || "none";
-        return {
-          content: [{ type: "text", text: [
-            `Command "${spec.id}" is not allowed in workflow phase "${phase}".`,
-            `Allowed in this phase: ${allowed}`,
-          ].join("\n") }],
-          details: { ok: false, reason: "phase-not-allowed", phase, commandId: spec.id },
-        };
-      }
-
-      if (spec.requiresApproval && ctx.hasUI) {
-        const ok = await ctx.ui.confirm(
-          `Run: ${spec.id}`,
-          `${spec.description}
-Risk level: ${spec.riskLevel}`,
-        );
-        if (!ok) {
-          return {
-            content: [{ type: "text", text: `Command "${spec.id}" cancelled by user.` }],
-            details: { ok: false, reason: "user-cancelled" },
-          };
-        }
-      }
-
-      const result = runCatalogCommand(spec, getGitRoot());
-      const formatted = formatCatalogCommandResult(result, spec);
-
-      if (["code-quality", "project-test"].includes(spec.id)) {
-        state.recentVerificationCommands.push({ command: spec.id, timestamp: Date.now(), phase: phase ?? undefined });
-        if (state.recentVerificationCommands.length > 20) state.recentVerificationCommands.shift();
-      }
-
-      return {
-        content: [{ type: "text", text: formatted }],
-        details: { ok: result.ok, commandId: spec.id, exitCode: result.exitCode, elapsedMs: result.elapsedMs, truncated: result.truncated },
-      };
+      return executeWorkflowCatalogCommand(state, params.commandId, ctx);
     },
 
     renderCall(args, theme) {
@@ -748,159 +692,19 @@ Risk level: ${spec.riskLevel}`,
       summary: Type.String({ description: "Brief summary of what was completed in this phase and what the next phase involves" }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      if (!state.workflow) {
-        return { content: [{ type: "text", text: "No active workflow. Start one with /workflow start." }], details: { ok: false } };
-      }
-      const nextPhase = getNextPhase(state.workflow.phase);
-      const requiresUserApproval = Boolean(nextPhase && isSharedApprovalBoundary(state.workflow.phase, nextPhase));
-      if (!ctx.hasUI && requiresUserApproval) {
-        return { content: [{ type: "text", text: "Interactive UI is required for this approval boundary. Re-run from a UI session so the yes/no dialog can be shown." }], details: { ok: false, reason: "no-ui" } };
-      }
-
-      // Pre-flight checks before showing any dialog — fail fast with a clear message
-      const planReviewPrecheck = await precheckPlanReviewBeforeApproval(ctx);
-      if (!planReviewPrecheck.ok) {
-        return { content: [{ type: "text", text: planReviewPrecheck.text }], details: { ok: false, reason: "dpaa-precheck-failed" } };
-      }
-
-      if (state.workflow.phase === "code_review" && state.reviewPackageToken?.workflowId !== state.workflow.id) {
-        return {
-          content: [{ type: "text", text: "⚠️ submit_review_package를 먼저 호출해야 합니다. 자기 리뷰, 독립 리뷰어 리뷰, quality gate를 완료한 후 submit_review_package를 호출하세요." }],
-          details: { ok: false, reason: "review-package-required" },
-        };
-      }
-
-      // commit → push: policy scan owns its own yes/no dialog; skip the generic confirm to avoid double dialogs.
-      if (state.workflow.phase === "commit") {
-        if (!(await confirmPushPolicyForPushPhase(ctx))) {
-          return { content: [{ type: "text", text: "Push policy 확인이 거부됐습니다. Push 단계 진입이 취소됩니다." }], details: { ok: false, reason: "policy-declined" } };
-        }
-      } else if (requiresUserApproval) {
-        const confirmed = await ctx.ui.confirm(
-          params.summary,
-          `[${state.workflow.phase}] → [${nextPhase ?? "done"}]\n\n다음 단계로 진행할까요?`,
-        );
-        if (!confirmed) {
-          return { content: [{ type: "text", text: "취소됐습니다. 현재 단계를 유지합니다." }], details: { ok: false, reason: "user-declined" } };
-        }
-      }
-
-      const workflowId = state.workflow.id;
-
-      // implement → code_review: TDD 첨종 검증
-      if (state.workflow.phase === "implement") {
-        const tddRoot = state.workflow.gitRoot ?? getGitRoot();
-        const snapshot = state.workflow.untestedClassesSnapshot;
-        if (tddRoot && snapshot) {
-          const currentUntested = getUntestedClasses(tddRoot);
-          const newlyUntested = currentUntested.filter((cls) => !snapshot.includes(cls));
-          if (newlyUntested.length > 0) {
-            await steerLlm(
-              `🧪 TDD 마준수 필요 — implement 중 테스트 없는 클래스가 생겼습니다. 테스트 작성 후 workflow_approve를 다시 호출하세요.\n\n` +
-              newlyUntested.map((c) => `- ${c}`).join("\n"),
-            );
-            return {
-              content: [{ type: "text", text: `TDD 미준수 (${newlyUntested.length}개 클래스). 테스트를 먼저 작성하세요.` }],
-              details: { ok: false, reason: "tdd-violation", classes: newlyUntested },
-            };
-          }
-        }
-      }
-
-      // implement → code_review: quality gate 자동 검증
-      if (state.workflow.phase === "implement") {
-        const gitRoot = state.workflow.gitRoot ?? getGitRoot();
-        const qualitySpec = getCatalogCommand("project-quality");
-        if (qualitySpec && gitRoot) {
-          const qualityResult = runCatalogCommand(qualitySpec, gitRoot);
-          const isToolingError = !qualityResult.ok && (
-            qualityResult.output.includes("No quality command detected") ||
-            qualityResult.output.includes("No project-quality command") ||
-            qualityResult.exitCode == null
-          );
-          if (!qualityResult.ok && !isToolingError) {
-            // 실제 코드 품질 위반 — LLM에게 교정 지시
-            const violations = qualityResult.output.split("\n").slice(-60).join("\n").trim();
-            await steerLlm(
-              `🔧 code_review 진입 전 품질 검사 실패 — 수정 후 workflow_approve를 다시 호출하세요.\n\n${violations}`,
-            );
-            return {
-              content: [{ type: "text", text: "품질 검사 실패. 위반을 수정한 후 다시 시도하세요." }],
-              details: { ok: false, reason: "quality-gate-failed" },
-            };
-          }
-          // isToolingError: quality 도구 미설치 등 환경 문제 — 통과 허용
-        }
-      }
-
-      const result = await advanceWorkflow(state.workflow, "user_approved", { approvedPlanSha256: state.dpaaGuardSatisfiedToken?.planSha256 });
-      if (!result.ok) {
-        if (result.gate) {
-          const failures = (state.gateFailures.get(result.gate) ?? 0) + 1;
-          state.gateFailures.set(result.gate, failures);
-          // 3회 이상 연속 실패 시 다른 접근을 유도하는 steer 주입
-          if (failures >= 3) {
-            await steerLlm(
-              `⚠️ ${result.gate} gate가 ${failures}번 연속 실패했습니다.\n\n` +
-              `현재 접근 방식이 막혀있습니다. 다음을 시도해보세요:\n` +
-              `- gate 실패 메시지의 근본 원인을 먼저 분석\n` +
-              `- DPAA 실패라면 자연어 문장 수정 반복을 멈추고 files/exports/tests/commands/non-goals 표 기반 contract plan으로 재작성\n` +
-              `- 문제를 더 작은 단위로 분해해 각각 해결\n` +
-              `- 계획 자체가 문제라면 /workflow undo로 plan 단계로 돌아가 수정\n\n` +
-              `Gate 메시지:\n${result.message.slice(0, 500)}`,
-            );
-          }
-        }
-        refreshBoard(ctx);
-        refreshStatus(ctx);
-        return { content: [{ type: "text", text: `Workflow transition was requested, but it was blocked by a workflow gate.\nInteractive user approval was received, but transition was blocked by guard validation.\nDefault handling: do not ask the user for a skip first. Fix the underlying cause within the current phase when possible, then retry the workflow transition. Ask the user only for product/architecture input, an approval boundary, or an accepted-risk exception.\n\n${result.message}` }], details: { ok: false, reason: "gate-blocked" } };
-      }
-
-      const transitions = result.transitions ?? [];
-      transitions.forEach((t) => {
-        if (t.from === "plan_review" && t.to === "implement") {
-          const dpaaTx = transitions.find((tx) => tx.from === "plan_review" && tx.to === "implement");
-          state.dpaaGuardSatisfiedToken = { workflowId, issuedAt: Date.now(), reason: "user_approved", planSha256: dpaaTx?.planSha256 };
-          persistGuardToken(HARNESS_TOKEN_TYPES.DPAA, state.dpaaGuardSatisfiedToken as unknown as Record<string, unknown>);
-          state.gateFailures.delete("dpaa");
-          clearPendingWorkflowSteersForPhase(workflowId, "plan_review");
-          // implement 시작 시점의 미테스트 클래스 snapshot 저장 (TDD 체크용)
-          const implRoot = state.workflow?.gitRoot ?? getGitRoot();
-          if (implRoot && state.workflow) {
-            state.workflow.untestedClassesSnapshot = getUntestedClasses(implRoot);
-            saveWorkflow(state.workflow);
-          }
-        }
-        if (t.from === "code_review" && t.to === "review_approved") {
-          state.codeQualityGuardSatisfiedToken = { workflowId, issuedAt: Date.now(), reason: "automated_review_passed" };
-          state.codeReviewGuardSatisfiedToken = { critical: 0, major: 0, minor: 0, timestamp: Date.now() };
-          persistGuardToken(HARNESS_TOKEN_TYPES.CODE_QUALITY, state.codeQualityGuardSatisfiedToken as unknown as Record<string, unknown>);
-          persistGuardToken(HARNESS_TOKEN_TYPES.CODE_REVIEW, { ...state.codeReviewGuardSatisfiedToken, workflowId });
-          state.recentVerificationCommands.push({ command: "codeQualityGuard", timestamp: Date.now(), phase: "code_review" });
-          if (state.recentVerificationCommands.length > 20) state.recentVerificationCommands.shift();
-          state.gateFailures.delete("code-quality");
-          clearPendingWorkflowSteersForPhase(workflowId, "code_review");
-        }
-        if (t.from === "commit" && t.to === "push") {
-          state.pushExecutionGuardSatisfiedToken = { workflowId, issuedAt: Date.now(), reason: "user_approved" };
-          persistGuardToken(HARNESS_TOKEN_TYPES.PUSH_EXECUTION, state.pushExecutionGuardSatisfiedToken as unknown as Record<string, unknown>);
-        }
+      return executeWorkflowApproval(state, params.summary, ctx, {
+        precheckPlanReviewBeforeApproval,
+        confirmPushPolicyForPushPhase,
+        steerLlm,
+        refreshBoard,
+        refreshStatus,
+        persistGuardToken,
+        clearPendingWorkflowSteersForPhase,
+        clearPendingWorkflowSteersExceptCurrent,
+        clearActiveWorkflowAfterCompletion,
+        applyPhaseToolPolicy,
       });
-
-      clearPendingWorkflowSteersExceptCurrent();
-      const completed = transitions.some((t) => t.to === "done");
-      if (completed) {
-        clearActiveWorkflowAfterCompletion();
-        applyPhaseToolPolicy(null);
-      }
-      refreshBoard(ctx);
-      refreshStatus(ctx);
-      return {
-        content: [{ type: "text", text: completed ? result.message : result.message + "\n\n" + formatWorkflowAction(state.workflow) }],
-        details: { ok: true, transitions: transitions.map((t) => `${t.from} → ${t.to}`), completed },
-      };
     },
-
     renderCall(args, theme) {
       return new Text(
         theme.fg("toolTitle", theme.bold("✅ ")) + theme.fg("accent", "workflow_approve") +
@@ -1656,14 +1460,14 @@ Risk level: ${spec.riskLevel}`,
       }
 
       if (command === "undo") {
-        const result = undoWorkflow(state.workflow);
-        ctx.ui.notify(result.message, result.ok ? "info" : "warning");
+        const result = undoManualWorkflowCheckpoint(state);
+        ctx.ui.notify(result.message, result.level);
         return;
       }
 
       if (command === "redo") {
-        const result = redoWorkflow(state.workflow);
-        ctx.ui.notify(result.message, result.ok ? "info" : "warning");
+        const result = redoManualWorkflowCheckpoint(state);
+        ctx.ui.notify(result.message, result.level);
         return;
       }
 
@@ -1678,29 +1482,7 @@ Risk level: ${spec.riskLevel}`,
       }
 
       if (command === "tools") {
-        const phase = state.workflow?.phase ?? null;
-        const builtins = phase ? PHASE_ALLOWED_BUILTIN_TOOLS[phase] ?? [] : ["all"];
-        const catalogCmds = phase ? getCatalogCommandsForPhase(phase) : COMMAND_CATALOG;
-        const extensionToolNames = [
-          "submit_review_package",
-          "workflow_run_command",
-          "workflow_approve",
-          "workflow_state",
-          "workflow_propose_edit",
-          "workflow_apply_approved_edit",
-        ];
-        const lines = [
-          phase ? `⚙️ Phase: ${phase}` : "No active workflow (showing all)",
-          "",
-          `Built-in tools: ${(builtins as readonly string[]).join(", ") || "none"}`,
-          "",
-          "Extension tools (always available):",
-          ...extensionToolNames.map((n) => `  ${n}`),
-          "",
-          "Catalog commands (via workflow_run_command):",
-          ...catalogCmds.map((s) => `  ${s.id.padEnd(20)} ${s.description}  [${s.riskLevel}]`),
-        ];
-        ctx.ui.notify(lines.join("\n"), "info");
+        ctx.ui.notify(formatWorkflowToolsListing(state.workflow?.phase ?? null), "info");
         return;
       }
 
@@ -1731,46 +1513,34 @@ Risk level: ${spec.riskLevel}`,
       }
 
       if (command === "checkpoint") {
-        if (!state.workflow) {
-          ctx.ui.notify("진행 중인 workflow가 없습니다. /workflow start 를 먼저 실행하세요.", "warning");
-          return;
-        }
-        const workspace = validateWorkflowWorkspace(state.workflow);
-        if (!workspace.ok) {
-          ctx.ui.notify(formatWorkspaceMismatch(workspace), "warning");
-          return;
+        if (state.workflow) {
+          const workspace = validateWorkflowWorkspace(state.workflow);
+          if (!workspace.ok) {
+            ctx.ui.notify(formatWorkspaceMismatch(workspace), "warning");
+            return;
+          }
         }
         const reason = rest.join(" ").trim() || "manual";
-        const checkpoint = createWorkspaceCheckpoint(state.workflow, reason);
-        state.lastInputCheckpointSignature = getWorkspaceStatusSignature(state.workflow.gitRoot);
-        ctx.ui.notify(checkpoint ? `Workspace checkpoint 생성: ${path.basename(checkpoint)}` : "Workspace checkpoint를 생성하지 못했습니다.", checkpoint ? "info" : "warning");
+        const result = createManualWorkspaceCheckpoint(state, reason);
+        ctx.ui.notify(result.message, result.level);
         return;
       }
 
       if (command === "checkpoints") {
-        ctx.ui.notify(formatWorkspaceCheckpoints(state.workflow), "info");
+        ctx.ui.notify(formatManualWorkspaceCheckpoints(state), "info");
         return;
       }
 
       if (command === "restore") {
-        if (!state.workflow) {
-          ctx.ui.notify("진행 중인 workflow가 없습니다. /workflow start 를 먼저 실행하세요.", "warning");
-          return;
+        if (state.workflow) {
+          const workspace = validateWorkflowWorkspace(state.workflow);
+          if (!workspace.ok) {
+            ctx.ui.notify(formatWorkspaceMismatch(workspace), "warning");
+            return;
+          }
         }
-        const workspace = validateWorkflowWorkspace(state.workflow);
-        if (!workspace.ok) {
-          ctx.ui.notify(formatWorkspaceMismatch(workspace), "warning");
-          return;
-        }
-        const checkpointId = rest[0];
-        const checkpoint = resolveWorkspaceCheckpoint(state.workflow, checkpointId);
-        if (!checkpoint) {
-          ctx.ui.notify("복구할 checkpoint를 찾지 못했습니다. /workflow checkpoints 로 목록을 확인하세요.", "warning");
-          return;
-        }
-        createWorkspaceCheckpoint(state.workflow, `before-restore-${path.basename(checkpoint)}`);
-        ctx.ui.notify(restoreWorkspaceCheckpoint(checkpoint), "info");
-        state.lastInputCheckpointSignature = getWorkspaceStatusSignature(state.workflow.gitRoot);
+        const result = restoreManualWorkspaceCheckpoint(state, rest[0]);
+        ctx.ui.notify(result.message, result.level);
         return;
       }
 

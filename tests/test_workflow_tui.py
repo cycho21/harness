@@ -21,6 +21,7 @@ import textwrap
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / "target" / ".pi" / "extensions" / "workflow.ts"
 RUNTIME_UI = ROOT / "target" / ".pi" / "extensions" / "workflow" / "runtime-ui.ts"
+COMMAND_POLICY = ROOT / "target" / ".pi" / "extensions" / "workflow" / "command-policy.ts"
 MARKDOWN_BOX = ROOT / "target" / ".pi" / "extensions" / "workflow" / "markdown-box.ts"
 FORMAT = ROOT / "target" / ".pi" / "extensions" / "workflow" / "format.ts"
 THEME = ROOT / "target" / ".pi" / "themes" / "workflow-console.json"
@@ -246,17 +247,21 @@ def test_workflow_logs_subcommand_defined():
 
 
 def test_tools_command_shows_builtin_tools():
-    src = WORKFLOW.read_text(encoding="utf-8")
-    idx = src.index('command === "tools"')
-    block = src[idx:idx + 500]
-    assert "Built-in tools" in block or "builtins" in block
+    workflow_src = WORKFLOW.read_text(encoding="utf-8")
+    policy_src = COMMAND_POLICY.read_text(encoding="utf-8")
+    idx = workflow_src.index('command === "tools"')
+    block = workflow_src[idx:idx + 500]
+    assert "formatWorkflowToolsListing" in block
+    assert "Built-in tools" in policy_src or "builtins" in policy_src
 
 
 def test_tools_command_shows_catalog_commands():
-    src = WORKFLOW.read_text(encoding="utf-8")
-    idx = src.index('command === "tools"')
-    block = src[idx:idx + 500]
-    assert "Catalog commands" in block or "catalogCmds" in block
+    workflow_src = WORKFLOW.read_text(encoding="utf-8")
+    policy_src = COMMAND_POLICY.read_text(encoding="utf-8")
+    idx = workflow_src.index('command === "tools"')
+    block = workflow_src[idx:idx + 500]
+    assert "formatWorkflowToolsListing" in block
+    assert "Catalog commands" in policy_src or "catalogCmds" in policy_src
 
 
 def test_logs_command_uses_format_recent_field_logs():

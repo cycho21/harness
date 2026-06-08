@@ -95,7 +95,7 @@ def test_windows_bat_files_are_wrapped_with_cmd_c():
     assert 'executable = "cmd.exe";' in src
 
 
-def test_auto_executable_resolved_from_filesystem(): 
+def test_auto_executable_resolved_from_filesystem():
     src = CATALOG.read_text(encoding="utf-8")
     # Auto resolution must check gradlew/mvnw on filesystem, not trust user input
     assert "resolveAutoExecutable" in src
@@ -144,23 +144,28 @@ def test_workflow_run_command_tool_registered():
 
 
 def test_tool_checks_phase_before_execution():
-    src = WORKFLOW.read_text(encoding="utf-8")
-    assert "isPhaseAllowed" in src
-    assert "phase-not-allowed" in src
+    workflow_src = WORKFLOW.read_text(encoding="utf-8")
+    policy_src = (WORKFLOW.parent / "workflow" / "command-policy.ts").read_text(encoding="utf-8")
+    assert "executeWorkflowCatalogCommand" in workflow_src
+    assert "isPhaseAllowed" in policy_src
+    assert "phase-not-allowed" in policy_src
 
 
 def test_tool_rejects_unknown_command_id():
-    src = WORKFLOW.read_text(encoding="utf-8")
-    assert "unknown-command" in src
+    policy_src = (WORKFLOW.parent / "workflow" / "command-policy.ts").read_text(encoding="utf-8")
+    assert "unknown-command" in policy_src
 
 
 def test_tool_calls_run_catalog_command():
-    src = WORKFLOW.read_text(encoding="utf-8")
-    assert "runCatalogCommand" in src
+    workflow_src = WORKFLOW.read_text(encoding="utf-8")
+    policy_src = (WORKFLOW.parent / "workflow" / "command-policy.ts").read_text(encoding="utf-8")
+    assert "executeWorkflowCatalogCommand" in workflow_src
+    assert "runCatalogCommand" in policy_src
 
 
 def test_tool_tracks_verification_commands():
-    src = WORKFLOW.read_text(encoding="utf-8")
-    assert "recentVerificationCommands" in src
+    workflow_src = WORKFLOW.read_text(encoding="utf-8")
+    policy_src = (WORKFLOW.parent / "workflow" / "command-policy.ts").read_text(encoding="utf-8")
+    assert "recentVerificationCommands" in workflow_src
     # code-quality and project-test should be tracked
-    assert '"code-quality"' in src or "'code-quality'" in src
+    assert '"code-quality"' in policy_src or "'code-quality'" in policy_src

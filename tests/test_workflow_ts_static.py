@@ -74,6 +74,31 @@ class TestStateTs:
 # workflow.ts — variable shadowing
 # ---------------------------------------------------------------------------
 
+class TestWorkflowTsResponsibilitySplit:
+    def test_workflow_entrypoint_imports_responsibility_modules(self):
+        src = _workflow_src()
+        expected_imports = [
+            'from "./workflow/transitions"',
+            'from "./workflow/gate-runner"',
+            'from "./workflow/checkpoint-commands"',
+            'from "./workflow/command-policy"',
+        ]
+        missing = [item for item in expected_imports if item not in src]
+        assert not missing, f"workflow.ts must delegate responsibility groups via imports: {missing}"
+
+    def test_responsibility_modules_exist_with_named_exports(self):
+        required_exports = {
+            "transitions.ts": ["export async function precheckPlanReviewBeforeApproval", "export async function executeWorkflowApproval"],
+            "gate-runner.ts": ["export async function returnToPlanAfterDpaaBlock", "export function formatWorkflowGateBlockedMessage"],
+            "checkpoint-commands.ts": ["export function createManualWorkspaceCheckpoint", "export function restoreManualWorkspaceCheckpoint"],
+            "command-policy.ts": ["export async function executeWorkflowCatalogCommand", "export function formatWorkflowToolsListing"],
+        }
+        for filename, exports in required_exports.items():
+            src = _src(filename)
+            for export in exports:
+                assert export in src, f"{filename} must expose {export}"
+
+
 class TestWorkflowTsPolicySOT:
     def test_manual_state_uses_shared_policy_phase_helpers(self):
         src = _workflow_src()
@@ -312,12 +337,16 @@ class TestGateMessageLanguage:
         assert "Ask the user only for product/architecture input" in src
 
     def test_dpaa_precheck_runs_before_user_approval_dialog(self):
-        src = _workflow_src()
-        precheck = src.index("precheckPlanReviewBeforeApproval(ctx)")
-        confirm = src.index("ctx.ui.confirm(\n          params.summary")
+        workflow_src = _workflow_src()
+        transition_src = _src("transitions.ts")
+        gate_runner_src = _src("gate-runner.ts")
+        precheck = transition_src.index("deps.precheckPlanReviewBeforeApproval(ctx)")
+        confirm = transition_src.index("ctx.ui.confirm(")
         assert precheck < confirm
-        assert "DPAA precheck failed before user approval" in src
-        assert "transitionWorkflow(state.workflow, \"plan\", \"dpaa_precheck_repair_required\")" in src
+        assert "executeWorkflowApproval(state, params.summary, ctx" in workflow_src
+        assert "DPAA precheck failed before user approval" in gate_runner_src
+        assert "transitionWorkflow(state.workflow, \"plan\", \"dpaa_precheck_repair_required\")" not in workflow_src
+        assert "deps.transitionWorkflow(state.workflow, \"plan\", \"dpaa_precheck_repair_required\")" in gate_runner_src
 
     def test_dpaa_warn_is_advisory_not_hard_block(self):
         src = _src("gates.ts")
