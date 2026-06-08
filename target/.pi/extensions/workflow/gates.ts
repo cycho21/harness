@@ -660,6 +660,11 @@ export function formatWorkspaceMismatch(validation: WorkflowWorkspaceValidation)
   return formatGateBlocked({
     gate: "Workflow Workspace",
     why: `The current workspace does not match the worktree/branch where this workflow started. Problems: ${validation.problems.join(", ")}.`,
+    defaultHandling: [
+      "Do not try to satisfy this gate by editing files, changing workflow state, or simulating evidence.",
+      "Tell the user the expected directory/branch and ask them to navigate there before continuing.",
+      "Retry only after the actual workspace matches the workflow workspace.",
+    ],
     next: [
       "Tell the user which directory and branch this workflow started in, and ask them to navigate there before continuing",
       "Do not attempt to change directories yourself or simulate workspace state",
@@ -735,6 +740,11 @@ export function formatPushPolicyScanBlocked(scan: PushPolicyScanResult): string 
   return formatGateBlocked({
     gate: "Push Policy Scan",
     why: `Risky workspace changes were detected before git push. Changed files: ${scan.totalChanged} (limit: ${scan.maxChanged}).`,
+    defaultHandling: [
+      "Do not silently fix or hide risky changes to make the scan pass.",
+      "Present the risk summary to the user and continue only through the interactive policy approval path.",
+      "If the risk is caused by accidental changes, ask before removing or splitting them.",
+    ],
     next: [
       "Present each flagged category to the user clearly and explain the risk",
       "Ask the user to confirm they are aware of each risky change before proceeding",
@@ -761,12 +771,21 @@ export function consumeSkipToken(gate: WorkflowGate): { reason: string } | null 
   return { reason: token.reason };
 }
 
-export function formatGateBlocked(args: { gate: string; why: string; next: string[]; skip?: string }): string {
+export function formatGateBlocked(args: { gate: string; why: string; next: string[]; skip?: string; defaultHandling?: string[] }): string {
+  const defaultHandling = args.defaultHandling ?? [
+    "Do not ask the user to skip this gate as the first response.",
+    "If the issue is fixable within the current workflow phase, fix the underlying cause and retry the workflow transition.",
+    "Ask the user only when the fix requires product/architecture input, a workflow approval boundary, or an accepted-risk exception.",
+  ];
+
   return [
     banner(`🚦 ${args.gate.toUpperCase()} GATE BLOCKED`),
     "",
     "Why blocked:",
     `  ${args.why}`,
+    "",
+    "Default handling for the LLM:",
+    ...defaultHandling.map((item, index) => `  ${index + 1}. ${item}`),
     "",
     "Next actions:",
     ...args.next.map((item, index) => `  ${index + 1}. ${item}`),
