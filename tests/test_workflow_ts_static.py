@@ -155,6 +155,8 @@ class TestAmbiguityGatePolicy:
         assert "blocksSbadrFail" in src
         assert "STRICT_PATTERNS" in src
         assert "ADVISORY_PATTERNS" in src
+        assert "titleSource" in src
+        assert "strictSource" in src
 
     def test_dpaa_gate_uses_adaptive_policy_before_blocking(self):
         src = _src("gates.ts")

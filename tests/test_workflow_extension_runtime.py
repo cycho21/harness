@@ -28,6 +28,69 @@ def _run_node_runtime(script: str, tmp_path: Path) -> dict:
     return json.loads(result.stdout)
 
 
+def test_ambiguity_gate_policy_classification_runtime(tmp_path):
+    script = textwrap.dedent(
+        r'''
+        const path = require('path');
+        const { createJiti } = require('jiti');
+        const jiti = createJiti(path.resolve('runtime-test.js'), { interopDefault: false });
+        const { classifyAmbiguityGatePolicy } = jiti(path.resolve('target/.pi/extensions/workflow/domain/ambiguity-gate-policy.ts'));
+        const wf = (title) => ({ id: 'wf', title, phase: 'plan_review', cwd: process.cwd(), gitRoot: process.cwd(), branch: 'main', history: [], undone: [], startedAt: Date.now(), updatedAt: Date.now() });
+        const withReadmeVerification = [
+          '# Plan',
+          '- Implement user profile behavior.',
+          '- Verification: tests pass.',
+          '- Verification: README updated.',
+        ].join('\n');
+        console.log(JSON.stringify({
+          readmeTypo: classifyAmbiguityGatePolicy(wf('Fix README typo')).strictness,
+          investigation: classifyAmbiguityGatePolicy(wf('Investigate flaky test')).strictness,
+          featureWithReadmeVerification: classifyAmbiguityGatePolicy(wf('Add user profile feature'), withReadmeVerification).strictness,
+          apiEndpoint: classifyAmbiguityGatePolicy(wf('Add API endpoint')).strictness,
+          databaseMigration: classifyAmbiguityGatePolicy(wf('Run database migration')).strictness,
+          securityToken: classifyAmbiguityGatePolicy(wf('Update security token handling')).strictness,
+        }));
+        '''
+    )
+    data = _run_node_runtime(script, tmp_path)
+
+    assert data["readmeTypo"] == "advisory"
+    assert data["investigation"] == "advisory"
+    assert data["featureWithReadmeVerification"] == "standard"
+    assert data["apiEndpoint"] == "strict"
+    assert data["databaseMigration"] == "strict"
+    assert data["securityToken"] == "strict"
+
+
+def test_production_class_policy_handles_relative_and_absolute_paths(tmp_path):
+    project = tmp_path / "project"
+    service = project / "src" / "main" / "java" / "com" / "example" / "FooService.java"
+    dto = project / "src" / "main" / "java" / "com" / "example" / "dto" / "FooDto.java"
+    service.parent.mkdir(parents=True)
+    dto.parent.mkdir(parents=True)
+    script = textwrap.dedent(
+        rf'''
+        const path = require('path');
+        const {{ createJiti }} = require('jiti');
+        const jiti = createJiti(path.resolve('runtime-test.js'), {{ interopDefault: false }});
+        const {{ isProductionClassPath }} = jiti(path.resolve('target/.pi/extensions/workflow/domain/production-class-policy.ts'));
+        const gitRoot = {json.dumps(str(project))};
+        console.log(JSON.stringify({{
+          relativeService: isProductionClassPath('src/main/java/com/example/FooService.java', gitRoot),
+          absoluteService: isProductionClassPath({json.dumps(str(service))}, gitRoot),
+          dtoExcluded: isProductionClassPath({json.dumps(str(dto))}, gitRoot),
+          testClassExcluded: isProductionClassPath('src/test/java/com/example/FooServiceTest.java', gitRoot),
+        }}));
+        '''
+    )
+    data = _run_node_runtime(script, tmp_path)
+
+    assert data["relativeService"] is True
+    assert data["absoluteService"] is True
+    assert data["dtoExcluded"] is False
+    assert data["testClassExcluded"] is False
+
+
 def test_workflow_extension_runtime_registers_and_allows_restored_push(tmp_path):
     script = textwrap.dedent(
         r'''

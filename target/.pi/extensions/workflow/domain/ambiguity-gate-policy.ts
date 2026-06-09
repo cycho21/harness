@@ -23,8 +23,9 @@ const ADVISORY_PATTERNS = [
 ];
 
 export function classifyAmbiguityGatePolicy(workflow: WorkflowInstance, planText = ""): AmbiguityGatePolicy {
-  const source = `${workflow.title}\n${planText}`;
-  if (STRICT_PATTERNS.some((pattern) => pattern.test(source))) {
+  const titleSource = workflow.title;
+  const strictSource = `${workflow.title}\n${planText}`;
+  if (STRICT_PATTERNS.some((pattern) => pattern.test(strictSource))) {
     return {
       strictness: "strict",
       reason: "High-risk/API/schema/security/data/deployment keyword detected.",
@@ -34,7 +35,7 @@ export function classifyAmbiguityGatePolicy(workflow: WorkflowInstance, planText
     };
   }
 
-  if (ADVISORY_PATTERNS.some((pattern) => pattern.test(source))) {
+  if (ADVISORY_PATTERNS.some((pattern) => pattern.test(titleSource))) {
     return {
       strictness: "advisory",
       reason: "Low-risk, documentation/cosmetic, or discovery-oriented keyword detected.",
