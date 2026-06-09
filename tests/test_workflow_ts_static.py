@@ -117,6 +117,7 @@ class TestWorkflowTsResponsibilitySplit:
             EXT_DIR / "application" / "extension-mutation-approval.ts",
             EXT_DIR / "application" / "tool-call-gate.ts",
             EXT_DIR / "application" / "workflow-command-router.ts",
+            EXT_DIR / "domain" / "ambiguity-gate-policy.ts",
             EXT_DIR / "domain" / "production-class-policy.ts",
         ]
         missing = [str(path.relative_to(ROOT)) for path in required if not path.exists()]
@@ -144,6 +145,23 @@ class TestWorkflowTsPolicySOT:
         assert "sharedWorkflowPhases" in state_block
         assert "isSharedWorkflowPhase" in state_block
         assert "WORKFLOW_PHASES" not in state_block
+
+
+class TestAmbiguityGatePolicy:
+    def test_adaptive_ambiguity_policy_supports_risk_levels(self):
+        src = (EXT_DIR / "domain" / "ambiguity-gate-policy.ts").read_text(encoding="utf-8")
+        assert '"advisory" | "standard" | "strict"' in src
+        assert "blocksDpaaFail" in src
+        assert "blocksSbadrFail" in src
+        assert "STRICT_PATTERNS" in src
+        assert "ADVISORY_PATTERNS" in src
+
+    def test_dpaa_gate_uses_adaptive_policy_before_blocking(self):
+        src = _src("gates.ts")
+        assert "classifyAmbiguityGatePolicy" in src
+        assert "!ambiguityPolicy.blocksDpaaFail" in src
+        assert "!ambiguityPolicy.blocksSbadrFail" in src
+        assert "DPAA advisory skipped: no plan required" in src
 
 
 class TestWorkflowTsShadowing:

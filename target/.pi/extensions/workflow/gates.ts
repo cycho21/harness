@@ -9,6 +9,7 @@ import { getBranch, getGitRoot } from "./git";
 import { sha256File } from "./storage";
 import { banner, table } from "./ui";
 import { writeFieldLogEvent } from "./field-log";
+import { classifyAmbiguityGatePolicy, formatAmbiguityGatePolicy } from "./domain/ambiguity-gate-policy";
 
 // This file lives at: <harness-root>/.pi/extensions/workflow/gates.ts
 const HARNESS_ROOT = path.resolve(__dirname, "../../..");
@@ -358,6 +359,25 @@ export function runDpaaGate(workflow: WorkflowInstance, from: WorkflowPhase, to:
   }
 
   const planPath = findPlanForDpaa();
+  const initialPolicy = classifyAmbiguityGatePolicy(workflow);
+  if (!planPath && !initialPolicy.requiresPlan) {
+    writeFieldLogEvent({
+      type: "gate.skipped",
+      category: "dpaa",
+      severity: "info",
+      status: "skipped",
+      workflow,
+      fromPhase: from,
+      toPhase: to,
+      summary: "DPAA plan requirement relaxed by adaptive ambiguity policy.",
+      expected: "Low-risk or discovery workflows may proceed without a machine-checkable plan.",
+      actual: formatAmbiguityGatePolicy(initialPolicy),
+      impact: "Implementation may proceed; maintain concise assumptions and verification in the main workflow summary.",
+      primaryMessage: initialPolicy.reason,
+      improvementKind: "workflow-rule",
+    });
+    return { ok: true, message: `DPAA advisory skipped: no plan required for this workflow. ${formatAmbiguityGatePolicy(initialPolicy)}` };
+  }
   if (!planPath) {
     writeFieldLogEvent({
       type: "gate.failed",
@@ -385,6 +405,8 @@ export function runDpaaGate(workflow: WorkflowInstance, from: WorkflowPhase, to:
     };
   }
 
+  const planTextForPolicy = fs.existsSync(planPath) ? fs.readFileSync(planPath, "utf-8") : "";
+  const ambiguityPolicy = classifyAmbiguityGatePolicy(workflow, planTextForPolicy);
   const snapshot = createArtifactSnapshot(workflow, "dpaa", "dpaa-check-before-implementation", planPath);
   const checkedPlanPath = snapshot?.planPath ?? planPath;
   const reportPath = path.join(os.tmpdir(), `dpaa-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
@@ -497,6 +519,40 @@ export function runDpaaGate(workflow: WorkflowInstance, from: WorkflowPhase, to:
    💡 ${f.suggestion}`,
     );
 
+    if (sr.verdict === "FAIL" && !ambiguityPolicy.blocksSbadrFail) {
+      writeFieldLogEvent({
+        type: "gate.failed",
+        category: "dpaa",
+        severity: "warning",
+        status: "accepted-risk",
+        workflow,
+        fromPhase: from,
+        toPhase: to,
+        summary: `SBADR FAIL treated as advisory by adaptive ambiguity policy (score=${sr.score.toFixed(3)}).`,
+        expected: "Low-risk or discovery workflows do not block implementation on syntactic ambiguity alone.",
+        actual: `${formatAmbiguityGatePolicy(ambiguityPolicy)}; SBADR verdict=FAIL, ambiguous=${sr.ambiguous_count}/${sr.sentence_count}`,
+        impact: "Proceeding is allowed, but the LLM should repair wording when it does not change business intent.",
+        primaryMessage: sr.findings[0]?.detail ?? "SBADR returned FAIL",
+        improvementKind: "dpaa-rule",
+        files: [{ path: checkedPlanPath, role: "input" }],
+        logExcerpt: sr.findings.slice(0, 5).map((f) => `[${f.type}] ${f.detail} → ${f.suggestion}`).join("\n"),
+      });
+      return {
+        ok: true,
+        message: [
+          "DPAA check passed",
+          "",
+          `⚠️  SBADR FAIL treated as advisory. ${formatAmbiguityGatePolicy(ambiguityPolicy)}`,
+          "The workflow may proceed, but apply SBADR suggestions when they do not change business intent.",
+          "",
+          "Top Findings",
+          "──────────────────────────────────────",
+          ...sbadrFindings,
+        ].join("\n"),
+        planSha256: sha256File(checkedPlanPath),
+      };
+    }
+
     if (sr.verdict === "FAIL") {
       writeFieldLogEvent({
         type: "gate.failed",
@@ -574,6 +630,51 @@ export function runDpaaGate(workflow: WorkflowInstance, from: WorkflowPhase, to:
       message: [
         "DPAA advisory: WARN findings detected before implementation.",
         "The workflow may proceed, but the LLM should repair these findings when the rewrite does not change business intent.",
+        table([
+          ["Item", "Value"],
+          ["Verdict", report.level],
+          ["Penalty", String(report.overall)],
+          ["Plan", path.relative(process.cwd(), checkedPlanPath)],
+          ["Receipt", receipt ? `${receipt.timestamp} / ${receipt.planSha256.slice(0, 12)}` : "not saved"],
+          ["Snapshot", snapshot ? snapshot.version : "none"],
+        ]),
+        "",
+        "Top Findings",
+        "──────────────────────────────────────",
+        ...findings,
+      ].join("\n"),
+      planSha256: sha256File(checkedPlanPath),
+    };
+  }
+
+  if (!ambiguityPolicy.blocksDpaaFail) {
+    writeFieldLogEvent({
+      type: "gate.failed",
+      category: "dpaa",
+      severity: "warning",
+      status: "accepted-risk",
+      workflow,
+      fromPhase: from,
+      toPhase: to,
+      summary: `DPAA ${report.level} treated as advisory by adaptive ambiguity policy.`,
+      expected: "Low-risk or discovery workflows may proceed while preserving assumptions and verification.",
+      actual: `${formatAmbiguityGatePolicy(ambiguityPolicy)}; DPAA level=${report.level}, penalty=${report.overall}, findings=${report.findings.length}`,
+      impact: "Proceeding is allowed, but repair non-business-changing ambiguity before or during implementation.",
+      primaryMessage: report.findings[0]?.message ?? `DPAA returned ${report.level}`,
+      exitCode,
+      command: `${pythonCommand} -m dpaa.cli`,
+      findingCodes: report.findings.map((finding) => `${finding.layer}.${finding.rule}`).slice(0, 20),
+      files: [{ path: checkedPlanPath, role: "input" }],
+      logExcerpt: report.findings.slice(0, 5).map((finding) => `[${finding.layer}/${finding.rule}] ${finding.message} -> ${finding.suggestion}`).join("\n"),
+      improvementKind: "dpaa-rule",
+    });
+
+    return {
+      ok: true,
+      message: [
+        `DPAA ${report.level} treated as advisory before implementation.`,
+        formatAmbiguityGatePolicy(ambiguityPolicy),
+        "The workflow may proceed, but the LLM should repair findings when the rewrite does not change business intent.",
         table([
           ["Item", "Value"],
           ["Verdict", report.level],
