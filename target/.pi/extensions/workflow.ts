@@ -2093,47 +2093,39 @@ export default function (pi: ExtensionAPI) {
   // 응답 스트리밍 중 표시되는 인디케이터를 재미있는 문구들로 교체합니다.
 
   /**
-   * 텍스트에 offset(0~1)을 적용한 무지개 그라데이션을 입힙니다.
-   * offset이 커질수록 구바품 시작점이 왼쪽으로 호에 흐릅니다.
+   * 회색 바탕에 흰색 하이라이트를 입힙니다. pos(0~1)는 하이라이트 중심 위치이며,
+   * 프레임마다 pos가 오른쪽으로 이동하면서 흰빛이 흘러가는 효과를 냅니다.
    */
-  function rainbowGradient(text: string, offset = 0): string {
-    // 끝점이 첫 점과 동일한 색으로 닫힌 실로 무한 순환
-    const stops: [number, number, number][] = [
-      [255,  70,  90],  // rose
-      [255, 160,   0],  // amber
-      [245, 230,   0],  // yellow
-      [ 40, 210,  80],  // green
-      [  0, 200, 255],  // cyan
-      [120,  80, 255],  // indigo
-      [220,  50, 255],  // violet
-      [255,  70,  90],  // rose (순환 이음새)
-    ];
-    const segs = stops.length - 1;
+  function shimmerGradient(text: string, pos = 0): string {
+    const base: [number, number, number] = [105, 105, 105]; // 바탕 회색
+    const hi: [number, number, number]   = [255, 255, 255]; // 하이라이트 흰색
+    const halfWidth = 0.18; // 하이라이트가 닿는 좌우 폭(글자 비율)
     const chars = [...text]; // Unicode 코드 포인트 단위로 분리
     const n = chars.length;
     return chars.map((ch, i) => {
       // 공백과 제어 문자는 채색 안 함
       if (ch === " " || ch.charCodeAt(0) < 32) return ch;
-      const t = ((n <= 1 ? 0 : i / (n - 1)) + offset) % 1;
-      const seg = Math.min(Math.floor(t * segs), segs - 1);
-      const u = t * segs - seg;
-      const [r1, g1, b1] = stops[seg]!;
-      const [r2, g2, b2] = stops[seg + 1]!;
-      const r = Math.round(r1 + (r2 - r1) * u);
-      const g = Math.round(g1 + (g2 - g1) * u);
-      const b = Math.round(b1 + (b2 - b1) * u);
+      const t = n <= 1 ? 0 : i / (n - 1);
+      const d = Math.abs(t - pos);
+      const lin = Math.max(0, 1 - d / halfWidth);
+      const e = lin * lin * (3 - 2 * lin); // smoothstep 으로 부드러운 falloff
+      const r = Math.round(base[0] + (hi[0] - base[0]) * e);
+      const g = Math.round(base[1] + (hi[1] - base[1]) * e);
+      const b = Math.round(base[2] + (hi[2] - base[2]) * e);
       return `\x1b[38;2;${r};${g};${b}m${ch}`;
     }).join("") + "\x1b[0m";
   }
 
   /**
-   * 단일 문구를 frameCount개의 그라데이션 애니메이션 프레임으로 확장합니다.
-   * offset이 매 프레임마다 한 직 이동하면서 구바품이 흔르는 효과를 냅니다.
+   * 단일 문구를 frameCount개의 shimmer 애니메이션 프레임으로 확장합니다.
+   * 하이라이트가 왼쪽 밖에서 들어와 오른쪽 밖으로 빠져나가도록 sweep 합니다.
    */
-  function shimmerFrames(text: string, frameCount = 20): string[] {
-    return Array.from({ length: frameCount }, (_, i) =>
-      rainbowGradient(text, i / frameCount)
-    );
+  function shimmerFrames(text: string, frameCount = 50, sweepFrames = 25): string[] {
+    return Array.from({ length: frameCount }, (_, i) => {
+      const c = i % sweepFrames; // sweep를 반복해 문구 유지 시간과 흐름 속도를 분리
+      const pos = -0.2 + 1.4 * (c / (sweepFrames - 1)); // -0.2 → 1.2 sweep
+      return shimmerGradient(text, pos);
+    });
   }
   const FUN_PHRASES = [
     "임채훈 괴롭히는 중... 😈",
@@ -2203,9 +2195,11 @@ export default function (pi: ExtensionAPI) {
     try {
       // 세션마다 랜덤 순서로 섞고, 각 문구를 20프레임의 흐르는 무지개색 애니메이션으로 확장
       const shuffled = [...FUN_PHRASES].sort(() => Math.random() - 0.5);
-      const frames = shuffled.flatMap(phrase => shimmerFrames(phrase, 20));
-      // 20프레임 \xd7 100ms = 문구당 2초, 전체 연간 주기 약 30초
+      const frames = shuffled.flatMap(phrase => shimmerFrames(phrase, 50, 25));
+      // 50프레임 \xd7 100ms = 문구당 5초 (흔면 sweep 2.5초 × 2회)
       (ctx.ui as any).setWorkingIndicator?.({ frames, intervalMs: 100 });
+      // 인디케이터 오른쪽의 "Working..." 메시지 제거 (인터럽트 힌트는 footer에 별도 표시)
+      (ctx.ui as any).setWorkingMessage?.("");
     } catch { /* non-fatal */ }
 
     state.codeReviewGuardSatisfiedToken = null;
