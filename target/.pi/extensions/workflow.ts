@@ -2089,7 +2089,52 @@ export default function (pi: ExtensionAPI) {
   });
 
   // ── session_start: 상태 초기화 + 세션 컨텍스트 알림 ───────────────────────
+  // ── Fun working indicator ──────────────────────────────────────────────
+  // 응답 스트리밍 중 표시되는 인디케이터를 재미있는 문구들로 교체합니다.
+  const FUN_PHRASES = [
+    // 코딩 유머
+    "열심히 생각 중... 🤔",
+    "버그 탐정 활동 중 🔍",
+    "커피 세 잔째 ☕☕☕",
+    "변수명 고민 중... 🤷",
+    "null 체크 잊지 않겠습니다 🙏",
+    "코드 냄새 맡는 중 👃",
+    "기술 부채 청산 중 💸",
+    "레거시 해독 중 🗿",
+    "재귀 함수 머릿속으로 따라가는 중 🌀",
+    "테스트 먼저 쓰겠습니다... 아마도 🤞",
+    "DPAA 통과 기도 중 🎲",
+    "스택 오버플로우 정독 중 📚",
+    "merge conflict 해결 중 😤",
+    "주석 달까 말까 💭",
+    "스파게티 코드 정리 중 🍝",
+    "프로덕션에 직접 배포는 안 합니다 🤫",
+    "plan.md 꼼꼼히 읽는 중 📋",
+    "인덴트 세는 중 📐",
+    "컴파일 기다리는 중 ⏳",
+    "드디어 코드 짜는 중 🎉",
+    // 특십 코너 😈
+    "임채훈 괴롭히는 중... 😈",
+    "임채훈 교육 중 👨‍🎓",
+    "임채훈 갈구는 중 🤦",
+    "임채훈 체크하는 중... 🔎",
+    "임채훈 다슬리는 중 🏃‍♂️",
+    "임채훈 코드리뷰 중 😳",
+    "임채훈가 커피 마시고 오는 사이 폭주하는 중 ☕",
+    "임채훈한테 들키지 않게 조용히 수정 중 🤫",
+    "임채훈의 컴미트를 대신 써주는 중 ✍️",
+    "임채훈에게 더 열심히 하라고 독력하는 중 💪",
+  ];
+
   pi.on("session_start", async (event, ctx) => {
+    // 재미있는 working indicator 설정 — 세션마다 랜덤 순서로 섞어서 신선함 유지
+    try {
+      const theme = (ctx.ui as any).theme;
+      const color = (s: string): string => theme ? theme.fg("dim", s) : s;
+      const shuffled = [...FUN_PHRASES].sort(() => Math.random() - 0.5);
+      (ctx.ui as any).setWorkingIndicator?.({ frames: shuffled.map(color), intervalMs: 2500 });
+    } catch { /* non-fatal */ }
+
     state.codeReviewGuardSatisfiedToken = null;
     cancelWorkflowContinuationPending();
 
