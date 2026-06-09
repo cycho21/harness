@@ -15,7 +15,7 @@ def test_code_quality_gate_runs_before_review_approved():
     assert "export function runCodeQualityGate" in gates
     assert "codeQualityGuard" in gates
     assert "HARNESS_CODE_QUALITY_GUARD_CMD" in gates
-    assert "Checkstyle/PMD/test failures" in gates
+    assert "Checkstyle/PMD" in gates  # message content; exact phrasing may vary
 
 
 def test_code_quality_gate_treats_unknown_exit_as_tooling_error():

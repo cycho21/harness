@@ -22,9 +22,9 @@ export function formatWorkflowStatus(workflow: WorkflowInstance | null): string 
       ["목표", workflow.title],
       ["현재 단계", workflow.phase],
       ["다음 단계", next ?? "없음"],
-      ["Branch", workflow.branch],
-      ["Workspace", ws.ok ? "ok" : "⚠️ mismatch"],
-      ["Undo", workflow.history.length > 0 ? `${workflow.history.length}개 사용 가능` : "없음"],
+      ["브랜치", workflow.branch],
+      ["작업공간", ws.ok ? "정상" : "⚠️ 불일치"],
+      ["실행 취소", workflow.history.length > 0 ? `${workflow.history.length}개 사용 가능` : "없음"],
     ]),
     "",
     formatPhaseGuidanceForUser(workflow),
@@ -92,7 +92,7 @@ export function formatWorkflowAction(workflow: WorkflowInstance | null): string 
       lines.push(
         "- Transition mode: user approval boundary before implement.",
         "- Required now: present the plan; workflow_approve will show the user an explicit yes/no dialog before implementation.",
-        "- Approval validates the plan for ambiguity before implementation begins; if validation fails, clarify the plan with the user.",
+        "- Approval runs DPAA/SBADR ambiguity checks before implementation. If checks fail, autonomously repair vague/ambiguous sentences and retry workflow_approve — only ask the user for genuine business decisions that cannot be inferred from context.",
       );
       break;
     case "implement":
@@ -100,8 +100,7 @@ export function formatWorkflowAction(workflow: WorkflowInstance | null): string 
         "- Transition mode: automatic after implementation is complete.",
         "- Required now: implement only the approved scope, run the narrowest relevant verification, summarize changed files.",
         "- TDD: if writing new production code, write the failing test first without asking the user. Complete the full cycle (failing test → implement → pass) autonomously.",
-        "- Static analysis: if Checkstyle/PMD/lint fails, fix violations silently without reporting to the user. Do not ask; just fix and re-run.",
-        "- Then advance to code_review without asking user approval for this transition.",
+        "- Static analysis: write code that already follows the project's Checkstyle/PMD conventions (naming rules, line length, method size, import style). If violations occur anyway, fix them silently without reporting to the user. Do not ask; just fix and re-run.",
       );
       break;
     case "code_review":
@@ -109,14 +108,14 @@ export function formatWorkflowAction(workflow: WorkflowInstance | null): string 
         "- Transition mode: mechanical review gate, not a simple user-approval boundary.",
         "- Required now: run main self-review, independent reviewer/subagent review, and quality gates.",
         "- Prefer async subagent review for independent review so foreground timeouts do not block the main workflow; incorporate the completed async result into submit_review_package.",
-        "- Submit submit_review_package; stay in code_review for review fixes until the package and gates pass.",
+        "- Call submit_review_package; stay in code_review for review/fix cycles until the package and all gates pass.",
       );
       break;
     case "review_approved":
       lines.push(
         "- Transition mode: automatic documentation/commit-preparation chain.",
         "- Required now: ensure review findings are closed/accepted, then continue to document/commit preparation.",
-        "- Do not ask user approval before document; approval is required before push from commit.",
+        "- Do not ask user approval before document or commit preparation; user approval is required at the commit → push boundary only.",
       );
       break;
     case "document":
@@ -129,7 +128,7 @@ export function formatWorkflowAction(workflow: WorkflowInstance | null): string 
     case "commit":
       lines.push(
         "- Transition mode: user approval boundary before push.",
-        "- Required now: provide diff summary, risk/verification summary, and proposed commit message; commit only when appropriate.",
+        "- Required now: provide a concise diff summary, risk/verification summary, and a proposed commit message. Create the git commit after the user approves the message.",
         "- When ready for push, workflow_approve runs the policy scan and shows the user a yes/no dialog.",
       );
       break;
@@ -175,7 +174,7 @@ export function formatWorkflowHistory(workflow: WorkflowInstance | null): string
       "",
       banner("📚 Artifact 버전 이력"),
       table([
-        ["Version", "Source", "Reason", "DPAA"],
+        ["버전", "출처", "사유", "DPAA"],
         ...snapshots.map((snapshot) => [
           snapshot.version,
           snapshot.source,
@@ -244,11 +243,11 @@ export function phaseGuidance(phase: WorkflowPhase): string {
     case "plan":
       return "• Deliverable: produce/update the implementation plan; keep English DPAA artifacts faithful to the Korean sources.";
     case "plan_review":
-      return "• Deliverable: present the plan for approval. The approval dialog runs DPAA then SBADR; if either fails, explain the findings to the user and ask clarifying questions before editing artifacts.";
+      return "• Deliverable: present the plan for approval. The approval dialog runs DPAA then SBADR; if checks fail, autonomously repair the plan artifacts (vague phrasing, missing metrics, undefined pronouns, syntactic ambiguity) and retry workflow_approve. Ask the user only for genuine business decisions that cannot be inferred from context.";
     case "implement":
       return "• Deliverable: implement the approved plan only. After implementation and narrow verification are complete, advance to code_review automatically; do not ask user approval for this transition.";
     case "code_review":
-      return "• Deliverable: run/fix the code review loop. Advancing to review_approved mechanically runs codeQualityGuard (Checkstyle/PMD/tests) after submit_review_package is complete.";
+      return "• Deliverable: run/fix the code review loop. Advancing to review_approved mechanically runs codeQualityGuard (Checkstyle/PMD) + coverageGuard (JaCoCo) after submit_review_package is complete.";
     case "review_approved":
       return "• Deliverable: ensure review findings are addressed/accepted, then continue automatically toward documentation and commit preparation.";
     case "document":
@@ -279,8 +278,8 @@ export type WorkflowBoardState = {
 export function formatWorkflowBoard(s: WorkflowBoardState): string[] {
   if (!s.workflow) {
     return [
-      "⚪ No active workflow",
-      "  /workflow start <goal>",
+      "⚪ 워크플로우 없음",
+      "  /workflow start <목표>",
     ];
   }
 
@@ -318,7 +317,7 @@ export function formatWorkflowBoard(s: WorkflowBoardState): string[] {
     ? `Gates: ${relevantGates.map(([label, status]) => `${label} ${status}`).join("  ")}`
     : null;
   const lines: string[] = [
-    `🧭 ${wf.phase.padEnd(14)}  → ${next ?? "done"}`,
+    `🧭 ${wf.phase.padEnd(16)}  → ${next ?? "done"}`,
     `   ${wf.title.slice(0, 60)}`,
     ``,
     ...(gatesLine ? [gatesLine] : []),

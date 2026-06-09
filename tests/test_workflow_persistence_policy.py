@@ -13,7 +13,7 @@ def test_persisted_workflow_is_not_auto_loaded_as_authority():
     assert "workflow: WorkflowInstance | null" in runtime_state
     assert "workflow: null" in runtime_state
     assert "workflow: loadPersistedWorkflow()" not in text
-    assert "이전 workflow 기록이 파일에 남아 있지만 자동 복구하지 않습니다" in text
-    assert "파일 기록은 표시/감사용이며 gate 통과 권한으로 신뢰하지 않습니다" in text
-    assert "계속하려면 사용자가 직접 명시 명령을 입력하세요" in text
-    assert "/workflow state ${persisted.phase}" in text
+    assert "저장된 워크플로우가 있습니다" in text          # 저장된 워크플로우 존재 표시
+    assert "자동 복구하지 않으며 guard 증거로 신뢰하지 않습니다" in text  # 보안: 자동 복구 없음
+    assert "/workflow load" in text                       # 올바른 복구 명령 안내
+    assert "/workflow start" in text                      # 새 workflow 옵션 제공

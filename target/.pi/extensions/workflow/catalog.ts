@@ -61,19 +61,22 @@ export function detectBuildSystem(root: string): BuildSystemInfo {
       : exists("gradlew") ? path.join(root, "gradlew")
       : "gradle";
     let hasQualityGuard = false;
+    let hasCoverageGuard = false;
     for (const f of ["build.gradle", "build.gradle.kts"]) {
       try {
-        if (exists(f) && fs.readFileSync(path.join(root, f), "utf-8").includes("codeQualityGuard")) {
-          hasQualityGuard = true;
-          break;
-        }
+        const content = exists(f) ? fs.readFileSync(path.join(root, f), "utf-8") : null;
+        if (content && /\btask\s+codeQualityGuard\b/.test(content)) hasQualityGuard = true;
+        if (content && /\btask\s+coverageGuard\b/.test(content)) hasCoverageGuard = true;
       } catch { /* ignore */ }
     }
+    const qualityArgs = hasQualityGuard
+      ? (hasCoverageGuard ? ["codeQualityGuard", "coverageGuard"] : ["codeQualityGuard"])
+      : null;
     return {
       type: "gradle",
       testCommand: { executable: gradleBin, args: ["test"] },
       buildCommand: { executable: gradleBin, args: ["build", "-x", "test"] },
-      qualityCommand: hasQualityGuard ? { executable: gradleBin, args: ["codeQualityGuard"] } : null,
+      qualityCommand: qualityArgs ? { executable: gradleBin, args: qualityArgs } : null,
     };
   }
 

@@ -34,9 +34,9 @@ export function refreshWorkflowBoard(state: WorkflowRuntimeState, ctx: WorkflowB
         if (line.startsWith("🧭")) return theme.fg("accent", line);
         if (line.startsWith("Gates:")) {
           return line
-            .replace(/✅ pass/g, theme.fg("success", "✅ pass"))
-            .replace(/❌ fail/g, theme.fg("error", "❌ fail"))
-            .replace(/⏳ pending/g, theme.fg("muted", "⏳ pending"));
+            .replace(/✅/g, theme.fg("success", "✅"))
+            .replace(/❌/g, theme.fg("error", "❌"))
+            .replace(/⏳/g, theme.fg("warning", "⏳"));
         }
         if (line.startsWith("Tools:") || line.startsWith("Cmds:")) return theme.fg("dim", line);
         if (line.startsWith("→")) return theme.fg("warning", line);

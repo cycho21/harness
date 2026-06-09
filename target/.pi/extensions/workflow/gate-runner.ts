@@ -8,7 +8,7 @@ export type WorkflowGateRunnerState = {
 };
 
 export type ReturnToPlanAfterDpaaBlockDeps = {
-  transitionWorkflow: (workflow: WorkflowInstance, phase: WorkflowPhase, reason: string) => { ok: boolean; message: string };
+  transitionWorkflow: (workflow: WorkflowInstance, phase: WorkflowPhase, reason: string) => void;
   saveWorkflow: (workflow: WorkflowInstance) => void;
   refreshBoard: (ctx: any) => void;
   refreshStatus: (ctx: any) => void;
@@ -22,8 +22,7 @@ export async function returnToPlanAfterDpaaBlock(
   deps: ReturnToPlanAfterDpaaBlockDeps,
 ): Promise<string> {
   if (!state.workflow || state.workflow.phase !== "plan_review") return message;
-  const result = deps.transitionWorkflow(state.workflow, "plan", "dpaa_precheck_repair_required");
-  if (!result.ok) return message;
+  deps.transitionWorkflow(state.workflow, "plan", "dpaa_precheck_repair_required");
   deps.saveWorkflow(state.workflow);
   deps.refreshBoard(ctx);
   deps.refreshStatus(ctx);

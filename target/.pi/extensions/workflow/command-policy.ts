@@ -75,9 +75,11 @@ export function formatWorkflowToolsListing(phase: WorkflowPhase | null): string 
     "submit_review_package",
     "workflow_run_command",
     "workflow_approve",
+    "workflow_skip_gate",
     "workflow_state",
     "workflow_propose_edit",
     "workflow_apply_approved_edit",
+    "workflow_interview_wizard",
   ];
   return [
     phase ? `⚙️ Phase: ${phase}` : "No active workflow (showing all)",

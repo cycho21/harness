@@ -31,8 +31,8 @@ def test_manual_state_and_abort_have_explicit_yes_no_confirm_copy():
     assert "Code quality guard satisfied → quality evidence 복구" not in text
     assert "Code review guard satisfied → review evidence 복구" not in text
     assert "Workflow 종료 승인 확인" in text
-    assert "예: in-memory workflow를 종료하고 persisted 참고 기록도 삭제합니다." in text
-    assert "아니오: workflow를 유지합니다." in text
+    assert "예: 워크플로우 메모리를 종료하고 저장된 파일 기록도 삭제합니다." in text  # abort 확인에 '\uc608' 옵션 존재
+    assert "아니오: 워크플로우를 유지합니다." in text
 
 
 def test_policy_approval_audit_and_natural_approval_messages_are_explicit():

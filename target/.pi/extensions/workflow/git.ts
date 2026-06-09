@@ -39,6 +39,7 @@ export function getBranch(root: string): string {
 /**
  * 테스트 없는 production Java 클래스 목록 반환.
  * hook-common.sh의 is_unimportant_file 패턴과 동일한 제외 규칙 적용.
+ * Cross-platform: Node.js fs API로 구현 (Windows의 find/2>/dev/null 의존성 제거).
  */
 export function getUntestedClasses(root: string): string[] {
   const EXCLUDE_SUFFIX = new RegExp(
@@ -55,7 +56,7 @@ export function getUntestedClasses(root: string): string[] {
       "Constants", "Constant",
       // 이벤트 / 메시지 데이터 컨테이너
       "Event", "Message",
-      // 븷 추사치 (JPA Audit)
+      // 추상치 (JPA Audit)
       "Projection",
       // 폼 데이터
       "Form",
@@ -63,23 +64,56 @@ export function getUntestedClasses(root: string): string[] {
     "i",
   );
   const EXCLUDE_PREFIX = /^Q[A-Z]|^Migration/;
+  // 경로 구분자를 정규화해 Windows(\\ )와 Unix(/) 모두 처리
+  const EXCLUDE_PATH = /[\/\\](dto|entity|model|repository)[\/\\]/;
+  const MAIN_JAVA_SEGMENT = /[\/\\]src[\/\\]main[\/\\]java[\/\\]/;
+
+  /** 지정된 디렉터리 트리에서 src/main/java 경로에 속하는 .java 파일을 재귀 탐색 */
+  function collectJavaFiles(dir: string, depth: number): string[] {
+    if (depth > 12) return [];
+    const results: string[] = [];
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+    const SKIP_DIRS = new Set(["node_modules", ".git", "build", "target", ".gradle", ".idea", ".vscode"]);
+    for (const entry of entries) {
+      if (entry.name.startsWith(".") && entry.name !== ".java") {
+        if (entry.isDirectory()) continue; // 숨김 디렉터리 스킵
+      }
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (SKIP_DIRS.has(entry.name)) continue;
+        results.push(...collectJavaFiles(fullPath, depth + 1));
+      } else if (
+        entry.isFile() &&
+        entry.name.endsWith(".java") &&
+        entry.name !== "package-info.java" &&
+        MAIN_JAVA_SEGMENT.test(fullPath)
+      ) {
+        results.push(fullPath);
+      }
+    }
+    return results;
+  }
 
   try {
-    const out = execSync(
-      `find "${root}" -path "*/src/main/java/*.java" ! -name "package-info.java" 2>/dev/null`,
-      { encoding: "utf-8", stdio: "pipe", maxBuffer: 10 * 1024 * 1024 }
-    ).trim();
-    if (!out) return [];
-
+    const mainFiles = collectJavaFiles(root, 0);
     const untested: string[] = [];
-    for (const mainFile of out.split("\n").filter(Boolean)) {
+    for (const mainFile of mainFiles) {
       const className = path.basename(mainFile, ".java");
       if (EXCLUDE_SUFFIX.test(className) || EXCLUDE_PREFIX.test(className)) continue;
-      if (/\/dto\/|\/entity\/|\/model\/|\/repository\//.test(mainFile)) continue;
+      if (EXCLUDE_PATH.test(mainFile)) continue;
 
+      // Windows/Unix 모두 동작하는 경로 치환
+      const sep = path.sep;
+      const mainSegment = `${sep}src${sep}main${sep}java${sep}`;
+      const testSegment = `${sep}src${sep}test${sep}java${sep}`;
       const testDir = mainFile
-        .replace("/src/main/java/", "/src/test/java/")
-        .replace(`/${path.basename(mainFile)}`, "");
+        .replace(mainSegment, testSegment)
+        .replace(`${sep}${path.basename(mainFile)}`, "");
       const testFile = path.join(testDir, `${className}Test.java`);
       if (!fs.existsSync(testFile)) {
         untested.push(className);

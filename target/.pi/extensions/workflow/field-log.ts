@@ -11,8 +11,11 @@ const HARNESS_ROOT = path.resolve(__dirname, "../../..");
 const MEMORY_DIR = path.join(".project-memory", "harness");
 const EVENTS_FILE = "events.jsonl";
 
+// Cache stable runtime values that don't change during a session.
+const _runtimeCache: { harnessVersion?: string; pythonVersion?: string } = {};
+
 export type FieldLogCategory = "dpaa" | "code-quality" | "push-policy" | "workspace" | "phase" | "init" | "update" | "doctor" | "test" | "tool" | "prompt" | "user-correction" | "unknown";
-export type FieldLogEventType = "gate.failed" | "gate.skipped" | "tool.failed" | "test.failed" | "phase.violation" | "policy.blocked" | "doctor.failed" | "update.failed" | "user.correction" | "rollback.performed" | "lesson.proposed" | "failure.resolved";
+export type FieldLogEventType = "gate.failed" | "gate.skipped" | "tool.failed" | "test.failed" | "phase.violation" | "phase.transition" | "policy.blocked" | "doctor.failed" | "update.failed" | "user.correction" | "rollback.performed" | "lesson.proposed" | "failure.resolved";
 export type FieldLogImprovementKind = "schema" | "dpaa-rule" | "workflow-rule" | "doctor-check" | "init-update" | "prompt-instruction" | "test-coverage" | "docs" | "unknown";
 
 export type WriteFieldLogInput = {
@@ -166,13 +169,13 @@ function buildFieldLogEvent(input: WriteFieldLogInput) {
     eventId,
     timestamp: new Date().toISOString(),
     harness: {
-      version: commandOutput(`git -C "${HARNESS_ROOT}" rev-parse --short HEAD`) ?? "unknown",
+      version: (_runtimeCache.harnessVersion ??= commandOutput(`git -C "${HARNESS_ROOT}" rev-parse --short HEAD`) ?? "unknown"),
       gitCommit: commandOutput("git rev-parse --short HEAD") ?? "unknown",
       runtime: {
         host: "pi",
         platform: process.platform,
         nodeVersion: process.version,
-        pythonVersion: commandOutput("python --version") ?? commandOutput("python3 --version"),
+        pythonVersion: (_runtimeCache.pythonVersion ??= commandOutput("python --version") ?? commandOutput("python3 --version")),
       },
     },
     project: {

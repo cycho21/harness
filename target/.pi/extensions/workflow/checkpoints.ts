@@ -12,19 +12,30 @@ export function createWorkspaceCheckpoint(workflow: WorkflowInstance, reason: st
   const root = workflow.gitRoot;
   if (!root || !fs.existsSync(root)) return undefined;
 
+  const MAX = 100 * 1024 * 1024;
+  let stagedPatch: Buffer;
+  let unstagedPatch: Buffer;
+  let untracked: string[];
+  try {
+    stagedPatch = execFileSync("git", ["-C", root, "diff", "--binary", "--cached"], { maxBuffer: MAX });
+    unstagedPatch = execFileSync("git", ["-C", root, "diff", "--binary"], { maxBuffer: MAX });
+    untracked = execFileSync("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z"], { encoding: "utf-8", maxBuffer: MAX })
+      .split("\0")
+      .filter(Boolean);
+  } catch {
+    // Git is unavailable or in a bad state (e.g. merge conflict).
+    // Return undefined so the caller can proceed without a checkpoint
+    // rather than crashing the phase transition.
+    return undefined;
+  }
+
   const id = `${Date.now()}-${slugify(reason)}`;
   const dir = path.join(getWorkspaceCheckpointRoot(workflow.id), id);
   fs.mkdirSync(dir, { recursive: true });
 
-  const MAX = 100 * 1024 * 1024;
-  const stagedPatch = execFileSync("git", ["-C", root, "diff", "--binary", "--cached"], { maxBuffer: MAX });
-  const unstagedPatch = execFileSync("git", ["-C", root, "diff", "--binary"], { maxBuffer: MAX });
   fs.writeFileSync(path.join(dir, "staged.patch"), stagedPatch);
   fs.writeFileSync(path.join(dir, "unstaged.patch"), unstagedPatch);
 
-  const untracked = execFileSync("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z"], { encoding: "utf-8", maxBuffer: MAX })
-    .split("\0")
-    .filter(Boolean);
   const untrackedDir = path.join(dir, "untracked");
   for (const relative of untracked) {
     const source = path.join(root, relative);

@@ -214,7 +214,7 @@ export default function (pi: ExtensionAPI) {
   function cancelWorkflowContinuationPending(): void {
     if (state.workflowContinuationPending) {
       state.cancelledWorkflowContinuationMarkers.add(state.workflowContinuationPending.marker);
-      if (state.cancelledWorkflowContinuationMarkers.size > 20) {
+      if (state.cancelledWorkflowContinuationMarkers.size >= 20) {
         const oldest = state.cancelledWorkflowContinuationMarkers.values().next().value;
         if (oldest) state.cancelledWorkflowContinuationMarkers.delete(oldest);
       }
@@ -1369,7 +1369,7 @@ export default function (pi: ExtensionAPI) {
       if (command === "approve") {
         if (state.workflow?.phase === "code_review" && state.reviewPackageToken?.workflowId !== state.workflow.id) {
           ctx.ui.notify([
-            "Review package required before review_approved. Run main self-review, independent reviewer/subagent review, quality gates, then call submit_review_package.",
+            "review_approved로 전환하려면 먼저 review package가 필요합니다. 자기 리뷰 → 독립 리뷰어 리뷰 → quality gate 확인 후 submit_review_package를 호출하세요.",
             "",
             formatWorkflowAction(state.workflow),
           ].join("\n"), "warning");
@@ -1378,7 +1378,7 @@ export default function (pi: ExtensionAPI) {
         const nextPhase = state.workflow ? getNextPhase(state.workflow.phase) : null;
         const requiresUserApproval = Boolean(state.workflow && nextPhase && isSharedApprovalBoundary(state.workflow.phase, nextPhase));
         if (state.workflow && requiresUserApproval && !ctx.hasUI) {
-          ctx.ui.notify("Interactive UI is required for this approval boundary so the yes/no dialog can be shown.", "warning");
+          ctx.ui.notify("승인 대화상자를 표시하려면 대화형 UI가 필요합니다. UI 세션에서 다시 시도하세요.", "warning");
           return;
         }
         const slashPlanReviewPrecheck = await precheckPlanReviewBeforeApproval(ctx);
@@ -1405,7 +1405,7 @@ export default function (pi: ExtensionAPI) {
           if (result.gate) { state.gateFailures.set(result.gate, (state.gateFailures.get(result.gate) ?? 0) + 1); }
           refreshBoard(ctx);
           refreshStatus(ctx);
-          ctx.ui.notify(["Workflow transition was requested, but it was blocked by a workflow gate.", "Default handling: do not ask the user for a skip first. Fix the underlying cause within the current phase when possible, then retry the workflow transition. Ask the user only for product/architecture input, an approval boundary, or an accepted-risk exception.", "", result.message, "", formatWorkflowAction(state.workflow)].join("\n"), "warning");
+          ctx.ui.notify(["게이트가 워크플로우 전환을 차단했습니다. 근본 원인을 해결한 후 /workflow approve를 다시 실행하세요.", "Default handling: do not ask the user for a skip first. Fix the underlying cause within the current phase when possible, then retry the workflow transition. Ask the user only for product/architecture input, an approval boundary, or an accepted-risk exception.", "", result.message, "", formatWorkflowAction(state.workflow)].join("\n"), "warning");
           return;
         }
         const transitions = result.transitions ?? [];
@@ -1624,10 +1624,10 @@ export default function (pi: ExtensionAPI) {
         const ok = await ctx.ui.confirm(
           "Workflow 종료 승인 확인",
           [
-            `현재 workflow(${state.workflow.phase})를 종료하시겠습니까?`,
+            `현재 워크플로우(${state.workflow.phase})를 종료하시겠습니까?`,
             "",
-            "예: in-memory workflow를 종료하고 persisted 참고 기록도 삭제합니다.",
-            "아니오: workflow를 유지합니다.",
+            "예: 워크플로우 메모리를 종료하고 저장된 파일 기록도 삭제합니다.",
+            "아니오: 워크플로우를 유지합니다.",
           ].join("\n"),
         );
         if (!ok) return;
@@ -1668,12 +1668,13 @@ export default function (pi: ExtensionAPI) {
           "",
           formatWorkflowAction(null),
           "",
-          "참고: 이전 workflow 기록이 파일에 남아 있지만 자동 복구하지 않습니다.",
-          "파일 기록은 표시/감사용이며 gate 통과 권한으로 신뢰하지 않습니다.",
-          "계속하려면 사용자가 직접 명시 명령을 입력하세요:",
-          `  /workflow state ${persisted.phase}`,
-          `  # last workflow: ${persisted.title}`,
-          `  # updated: ${new Date(persisted.updatedAt).toISOString()}`,
+          `📂 저장된 워크플로우가 있습니다: [${persisted.phase}] ${persisted.title}`,
+          `   마지막 업데이트: ${new Date(persisted.updatedAt).toLocaleString("ko-KR")}`,
+          "",
+          "  /workflow load     — 이전 워크플로우를 메모리에 복구합니다 (guard evidence 없이)",
+          "  /workflow start <목표>  — 새 워크플로우를 시작합니다",
+          "",
+          "⚠️  저장된 파일은 표시·감사용입니다. 자동 복구하지 않으며 guard 증거로 신뢰하지 않습니다.",
         ].join("\n"), "info");
         return;
       }
@@ -1980,7 +1981,11 @@ export default function (pi: ExtensionAPI) {
           reason: formatGateBlocked({
             gate: "Workflow Transition History",
             why: "The workflow is in push, but commit → push transition history is missing.",
-            next: ["Return to commit phase", "Use the workflow yes/no approval dialog to advance commit → push", "Retry git push"],
+            next: [
+              "Use workflow_state tool or /workflow state commit to return to commit phase (manual recovery)",
+              "Then call workflow_approve to show the user the commit → push approval dialog",
+              "Only after the commit → push transition is recorded in workflow history, retry git push",
+            ],
           }),
         };
       }
@@ -2101,7 +2106,7 @@ export default function (pi: ExtensionAPI) {
       state.pendingSteerMessages.clear();
       state.gateFailures = new Map();
       applyPhaseToolPolicy(null);
-      ctx.ui.notify("Workflow guard state cleared for forked session. Use /workflow load if the workflow should continue in this fork.", "info");
+      ctx.ui.notify("포크된 세션에서는 guard 증거를 초기화했습니다. 이 포크에서 워크플로우를 계속하려면 /workflow load 를 실행하세요.", "info");
       return;
     }
 
@@ -2184,12 +2189,16 @@ export default function (pi: ExtensionAPI) {
     const root = getGitRoot();
     const branch = root ? getBranch(root) : "unknown";
 
+    const dpaaOk   = Boolean(state.workflow && state.dpaaGuardSatisfiedToken?.workflowId === state.workflow.id);
+    const qualOk    = Boolean(state.workflow && state.codeQualityGuardSatisfiedToken?.workflowId === state.workflow.id);
+    const reviewOk  = Boolean(state.codeReviewGuardSatisfiedToken);
+    const pushOk    = Boolean(state.workflow && state.pushExecutionGuardSatisfiedToken?.workflowId === state.workflow.id);
     const authLines = [
       "[Workflow Guard Evidence]",
-      `DPAA guard evidence: ${state.workflow && state.dpaaGuardSatisfiedToken?.workflowId === state.workflow.id ? "present" : "absent"}`,
-      `Code quality guard evidence: ${state.workflow && state.codeQualityGuardSatisfiedToken?.workflowId === state.workflow.id ? "present" : "absent"}`,
-      `Code review guard evidence: ${state.codeReviewGuardSatisfiedToken ? "present" : "absent"}`,
-      `Push transition evidence: ${state.workflow && state.pushExecutionGuardSatisfiedToken?.workflowId === state.workflow.id ? "present" : "absent"}`,
+      `DPAA guard evidence: ${dpaaOk ? "present" : "absent"}  (required: plan_review \u2192 implement)`,
+      `Code quality guard evidence: ${qualOk ? "present" : "absent"}  (required: code_review \u2192 review_approved)`,
+      `Code review guard evidence: ${reviewOk ? "present" : "absent"}  (required: submit_review_package before review_approved)`,
+      `Push transition evidence: ${pushOk ? "present" : "absent"}  (required: commit \u2192 push before git push)`,
       `Policy scan approvals this session: ${state.policyApprovals.length}`,
     ].join("\n");
 

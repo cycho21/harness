@@ -254,7 +254,7 @@ function createMemory(text: string): MemoryEntry {
 }
 
 function withRenderHash(entry: MemoryEntry): MemoryEntry {
-  const stable = stableRender(entry, false);
+  const stable = stableRender(entry);
   return { ...entry, rendering: { ...entry.rendering, stableRenderHash: sha256Prefixed(stable) } };
 }
 
@@ -339,9 +339,8 @@ function renderPriority(entry: MemoryEntry): number {
   return { constraint: 0, decision: 1, warning: 2, preference: 3, context: 4 }[entry.rendering.useAs];
 }
 
-function stableRender(entry: MemoryEntry, includeHash = true): string {
-  const base = `${entry.memoryId} | ${entry.type} | ${entry.importance} | ${entry.rendering.useAs} | ${entry.content.summary}`;
-  return includeHash ? base : base;
+function stableRender(entry: MemoryEntry): string {
+  return `${entry.memoryId} | ${entry.type} | ${entry.importance} | ${entry.rendering.useAs} | ${entry.content.summary}`;
 }
 
 function renderMemoryBlock(matches: MemoryMatch[]): string {

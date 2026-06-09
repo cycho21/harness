@@ -105,7 +105,7 @@ export async function executeWorkflowApproval(
       const newlyUntested = currentUntested.filter((cls) => !snapshot.includes(cls));
       if (newlyUntested.length > 0) {
         await deps.steerLlm(
-          `🧪 TDD 마준수 필요 — implement 중 테스트 없는 클래스가 생겼습니다. 테스트 작성 후 workflow_approve를 다시 호출하세요.\n\n` +
+          `🧪 TDD 미준수 필요 — implement 중 테스트 없는 클래스가 생겼습니다. 테스트 작성 후 workflow_approve를 다시 호출하세요.\n\n` +
           newlyUntested.map((c) => `- ${c}`).join("\n"),
         );
         return {
@@ -118,12 +118,12 @@ export async function executeWorkflowApproval(
 
   if (state.workflow.phase === "implement") {
     const gitRoot = state.workflow.gitRoot ?? getGitRoot();
-    const qualitySpec = getCatalogCommand("project-quality");
+    const qualitySpec = getCatalogCommand("code-quality");
     if (qualitySpec && gitRoot) {
       const qualityResult = runCatalogCommand(qualitySpec, gitRoot);
       const isToolingError = !qualityResult.ok && (
         qualityResult.output.includes("No quality command detected") ||
-        qualityResult.output.includes("No project-quality command") ||
+        qualityResult.output.includes("No code-quality command") ||
         qualityResult.exitCode == null
       );
       if (!qualityResult.ok && !isToolingError) {
