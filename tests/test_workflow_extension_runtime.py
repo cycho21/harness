@@ -57,6 +57,19 @@ def test_ambiguity_gate_policy_classification_runtime(tmp_path):
           '# Plan',
           '- Rename copy in README.',
         ].join('\n');
+        const conflictingHighRiskPlan = [
+          'Risk: high',
+          'Work type: security',
+          'Ambiguity gate: advisory',
+          '# Plan',
+          '- Change auth token handling.',
+        ].join('\n');
+        const compoundStrictWorkTypePlan = [
+          'Risk: low',
+          'Work type: data migration',
+          '# Plan',
+          '- Move account rows to the new table.',
+        ].join('\n');
         console.log(JSON.stringify({
           readmeTypo: classifyAmbiguityGatePolicy(wf('Fix README typo')).strictness,
           investigation: classifyAmbiguityGatePolicy(wf('Investigate flaky test')).strictness,
@@ -66,6 +79,8 @@ def test_ambiguity_gate_policy_classification_runtime(tmp_path):
           securityToken: classifyAmbiguityGatePolicy(wf('Update security token handling')).strictness,
           explicitAdvisoryMetadata: classifyAmbiguityGatePolicy(wf('Update API documentation'), explicitAdvisoryPlan).strictness,
           explicitStrictMetadata: classifyAmbiguityGatePolicy(wf('README copy edit'), explicitStrictPlan).strictness,
+          conflictingHighRiskMetadata: classifyAmbiguityGatePolicy(wf('Auth token update'), conflictingHighRiskPlan).strictness,
+          compoundStrictWorkType: classifyAmbiguityGatePolicy(wf('Move account data'), compoundStrictWorkTypePlan).strictness,
         }));
         '''
     )
@@ -79,6 +94,8 @@ def test_ambiguity_gate_policy_classification_runtime(tmp_path):
     assert data["securityToken"] == "strict"
     assert data["explicitAdvisoryMetadata"] == "advisory"
     assert data["explicitStrictMetadata"] == "strict"
+    assert data["conflictingHighRiskMetadata"] == "strict"
+    assert data["compoundStrictWorkType"] == "strict"
 
 
 def test_production_class_policy_handles_relative_and_absolute_paths(tmp_path):

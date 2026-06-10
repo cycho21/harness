@@ -56,25 +56,33 @@ export function classifyAmbiguityGatePolicy(workflow: WorkflowInstance, planText
 }
 
 function policyFromMetadata(metadata: AmbiguityPolicyMetadata): AmbiguityGatePolicy | undefined {
-  if (metadata.ambiguityGate) {
-    return buildPolicy(metadata.ambiguityGate, `Explicit plan metadata selected ambiguity gate '${metadata.ambiguityGate}'.`);
-  }
   if (metadata.risk === "high") {
     return buildPolicy("strict", "Explicit plan metadata marked risk as high.");
   }
-  if (metadata.workType && STRICT_WORK_TYPES.has(metadata.workType)) {
+  if (metadata.workType && workTypeHasSignal(metadata.workType, STRICT_WORK_TYPES)) {
     return buildPolicy("strict", `Explicit plan metadata marked work type '${metadata.workType}' as high risk.`);
+  }
+  if (metadata.ambiguityGate === "strict") {
+    return buildPolicy("strict", "Explicit plan metadata selected ambiguity gate 'strict'.");
+  }
+  if (metadata.ambiguityGate) {
+    return buildPolicy(metadata.ambiguityGate, `Explicit plan metadata selected ambiguity gate '${metadata.ambiguityGate}'.`);
   }
   if (metadata.risk === "low") {
     return buildPolicy("advisory", "Explicit plan metadata marked risk as low.");
   }
-  if (metadata.workType && ADVISORY_WORK_TYPES.has(metadata.workType)) {
+  if (metadata.workType && workTypeHasSignal(metadata.workType, ADVISORY_WORK_TYPES)) {
     return buildPolicy("advisory", `Explicit plan metadata marked work type '${metadata.workType}' as low risk.`);
   }
   if (metadata.risk === "normal") {
     return buildPolicy("standard", "Explicit plan metadata marked risk as normal.");
   }
   return undefined;
+}
+
+function workTypeHasSignal(workType: string, signals: Set<string>): boolean {
+  if (signals.has(workType)) return true;
+  return workType.split("-").some((part) => signals.has(part));
 }
 
 function parseAmbiguityPolicyMetadata(planText: string): AmbiguityPolicyMetadata {
