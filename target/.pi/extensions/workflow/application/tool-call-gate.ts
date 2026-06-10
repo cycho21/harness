@@ -66,17 +66,22 @@ function handleWriteToolPolicy(
       const isNewFile = !fs.existsSync(path.resolve(filePath));
       const testExists = fs.existsSync(path.resolve(testPath));
       if (!testExists) {
-        return {
-          block: true,
-          reason: [
-            `🧪 TDD: ${className}Test.java를 먼저 작성하세요.`,
-            isNewFile
-              ? `새 클래스를 작성하기 전에 테스트를 먼저 작성하세요.`
-              : `이 클래스에 대한 테스트 파일이 없습니다. 테스트를 먼저 작성하세요.`,
-            `예상 테스트 경로: ${testPath}`,
-            `[INSTRUCTION] 사용자에게 승인을 구하지 말고 즉시 자율적으로 위 경로에 테스트 파일을 작성한 뒤 원래 작업을 계속하세요.`,
-          ].join("\n"),
-        };
+        if (isNewFile) {
+          return {
+            block: true,
+            reason: [
+              `🧪 TDD: ${className}Test.java를 먼저 작성하세요.`,
+              `새 클래스를 작성하기 전에 테스트를 먼저 작성하세요.`,
+              `예상 테스트 경로: ${testPath}`,
+              `[INSTRUCTION] 사용자에게 승인을 구하지 말고 즉시 자율적으로 위 경로에 테스트 파일을 작성한 뒤 원래 작업을 계속하세요.`,
+            ].join("\n"),
+          };
+        } else {
+          void deps.steerLlm(
+            `🧪 TDD 참고: ${className}에 대한 테스트 파일이 없습니다 (${testPath}). 가능하면 테스트를 먼저 작성하세요.`,
+            "steer",
+          );
+        }
       }
     }
   }
