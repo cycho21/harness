@@ -640,6 +640,19 @@ export default function (pi: ExtensionAPI) {
         }
       }
 
+      // Clear stale gate state so the LLM doesn't see "N consecutive failures" after returning to fix.
+      if (isAutoBack) {
+        if (currentPhase === "code_review") {
+          state.reviewPackageToken = null;
+          state.codeQualityGuardSatisfiedToken = null;
+          state.gateFailures.delete("code-quality");
+        } else if (currentPhase === "plan_review") {
+          state.dpaaGuardSatisfiedToken = null;
+          state.gateFailures.delete("dpaa");
+        }
+        cancelWorkflowContinuationPending();
+      }
+
       const transitionReason = isAutoBack ? `review-back: ${params.reason}` : `manual-recovery: ${params.reason}`;
       transitionWorkflow(state.workflow, targetPhase, transitionReason);
       applyPhaseToolPolicy(targetPhase);
