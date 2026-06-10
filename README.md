@@ -131,6 +131,12 @@ pi
 python -m pytest tests/test_workflow_fake_llm_session.py -q
 ```
 
+`update-harness.sh` 배포 경로는 sample consumer project smoke test로 검증합니다. 이 테스트는 고정 fixture에 update script를 적용한 뒤 설치 결과와 `interview -> plan -> plan_review -> implement` workflow phase 전환을 확인합니다. 직접 Pi CLI를 띄우는 대신 기존 fake/runtime harness 패턴을 사용해 로컬 smoke를 안정적으로 유지합니다.
+
+```bash
+python -m pytest tests/test_harness_consumer_smoke.py -q
+```
+
 Workflow guard/reminder/catalog 변경 후에는 최소 smoke test로 최근 회귀가 잦은 영역을 확인합니다. 이 묶음은 Windows `.bat` wrapping, code quality tooling error 처리, reminder 신호, TDD write/edit 감지를 함께 검증합니다.
 
 ```bash
@@ -432,6 +438,7 @@ bash rm/mv/cp/sed -i/tee/> 등
 
 ```text
 .project-memory/harness/events.jsonl
+.project-memory/harness/audit.jsonl
 .project-memory/harness/exports/
 ```
 
@@ -448,6 +455,8 @@ redacted export:
 ```text
 /workflow failures export
 ```
+
+`.project-memory/harness/audit.jsonl`은 별도 JSON Lines audit stream입니다. `transition`, `guard_block`, `guard_skip`, `approval_boundary_anomaly` 이벤트를 최소 필드로 기록하며 raw prompt/transcript는 저장하지 않습니다. guard 복구 절차와 승인 메시지 미표시 사례는 [`docs/workflow-guard-recovery.md`](docs/workflow-guard-recovery.md)에 정리되어 있습니다.
 
 `.project-memory/`는 첫 write 시 `.git/info/exclude`에 추가되어 실수로 commit되지 않도록 보호됩니다.
 

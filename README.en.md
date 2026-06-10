@@ -46,6 +46,12 @@ The source repo test suite includes a fake LLM action-loop test that drives the 
 python -m pytest tests/test_workflow_fake_llm_session.py -q
 ```
 
+The `update-harness.sh` deployment path is covered by a sample consumer project smoke test. The test applies the update script to a fixed fixture, checks the installed files, and verifies the `interview -> plan -> plan_review -> implement` workflow phase path. It uses the existing fake/runtime harness pattern instead of launching the direct Pi CLI so local smoke runs stay stable.
+
+```bash
+python -m pytest tests/test_harness_consumer_smoke.py -q
+```
+
 After workflow guard/reminder/catalog changes, run the minimum smoke test for recently fragile areas. This bundle covers Windows `.bat` wrapping, code quality tooling-error handling, reminder signals, and TDD write/edit detection.
 
 ```bash
@@ -70,12 +76,14 @@ Requirements discovery now focuses on the default workflow `interview → plan` 
 
 Artifacts are written under `.ai/interview/`. Korean `.ko.md` files are the human source of truth, and English `.md` files are DPAA/SBADR-friendly machine-check artifacts.
 
-Harness failures are logged locally under `.project-memory/harness/events.jsonl` when gates block or are explicitly skipped. `/workflow failures` shows recent events plus category/severity counts so recurring guard friction or policy false positives are easy to spot. Review and export redacted logs with:
+Harness failures are logged locally under `.project-memory/harness/events.jsonl` when gates block or are explicitly skipped. `/workflow failures` shows recent events plus category/severity counts so recurring guard friction or policy false positives are easy to spot. The separate audit stream at `.project-memory/harness/audit.jsonl` records `transition`, `guard_block`, `guard_skip`, and `approval_boundary_anomaly` events with minimal fields and without raw prompt/transcript content. Review and export redacted field logs with:
 
 ```text
 /workflow failures
 /workflow failures export
 ```
+
+Guard recovery procedures and the missing approval dialog incident are documented in [`docs/workflow-guard-recovery.md`](docs/workflow-guard-recovery.md).
 
 External memory is stored separately under `.project-memory/memory/`. It starts as a small, user-governed memory layer: manually remember durable facts, search/list them, disable incorrect entries, and inspect what was injected into the prompt. Retrieval/injection tracking is recorded as ids/hashes/counts rather than raw prompts. The extension also adds `.project-memory/` to `.git/info/exclude` on first write so local memory is not accidentally committed.
 

@@ -10,6 +10,7 @@ import { banner, table } from "./ui";
 const HARNESS_ROOT = path.resolve(__dirname, "../../..");
 const MEMORY_DIR = path.join(".project-memory", "harness");
 const EVENTS_FILE = "events.jsonl";
+const AUDIT_FILE = "audit.jsonl";
 
 // Cache stable runtime values that don't change during a session.
 const _runtimeCache: { harnessVersion?: string; pythonVersion?: string } = {};
@@ -50,6 +51,21 @@ export type WriteFieldLogInput = {
 
 export type FieldLogEvent = ReturnType<typeof buildFieldLogEvent>;
 
+export type AuditEventType = "transition" | "guard_block" | "guard_skip" | "approval_boundary_anomaly";
+
+export type WriteAuditLogInput = {
+  eventType: AuditEventType;
+  workflow?: WorkflowInstance | null;
+  workflowId?: string | null;
+  phase?: WorkflowPhase | string | null;
+  fromPhase?: WorkflowPhase | string | null;
+  toPhase?: WorkflowPhase | string | null;
+  gate?: string | null;
+  result?: string | null;
+  severity?: "info" | "warning" | "major" | "critical" | "blocker";
+  reasonSummary?: string | null;
+};
+
 function projectRoot(): string {
   return process.env.HARNESS_FIELD_LOG_ROOT || getGitRoot() || process.cwd();
 }
@@ -74,6 +90,10 @@ function fieldLogDir(root: string = projectRoot()): string {
 
 function fieldLogPath(root: string = projectRoot()): string {
   return path.join(fieldLogDir(root), EVENTS_FILE);
+}
+
+function auditLogPath(root: string = projectRoot()): string {
+  return path.join(fieldLogDir(root), AUDIT_FILE);
 }
 
 function exportDir(root: string = projectRoot()): string {
@@ -231,6 +251,63 @@ function buildFieldLogEvent(input: WriteFieldLogInput) {
   };
 }
 
+function auditEventFromFieldLog(input: WriteFieldLogInput): WriteAuditLogInput | null {
+  if (input.type === "gate.failed") {
+    return {
+      eventType: "guard_block",
+      workflow: input.workflow,
+      phase: input.workflow?.phase,
+      fromPhase: input.fromPhase,
+      toPhase: input.toPhase,
+      gate: input.category,
+      result: "blocked",
+      severity: input.severity,
+      reasonSummary: input.summary,
+    };
+  }
+  if (input.type === "gate.skipped") {
+    return {
+      eventType: "guard_skip",
+      workflow: input.workflow,
+      phase: input.workflow?.phase,
+      fromPhase: input.fromPhase,
+      toPhase: input.toPhase,
+      gate: input.category,
+      result: "skipped",
+      severity: input.severity,
+      reasonSummary: input.summary,
+    };
+  }
+  return null;
+}
+
+export function writeAuditLogEvent(input: WriteAuditLogInput): string | null {
+  try {
+    const root = projectRoot();
+    ensureProjectMemoryIgnored(root);
+    const workflow = input.workflow;
+    const event = {
+      timestamp: new Date().toISOString(),
+      eventType: input.eventType,
+      workflowId: input.workflowId ?? workflow?.id ?? "none",
+      phase: input.phase ?? workflow?.phase ?? null,
+      fromPhase: input.fromPhase ?? null,
+      toPhase: input.toPhase ?? null,
+      gate: input.gate ?? null,
+      result: input.result ?? null,
+      severity: input.severity ?? "info",
+      reasonSummary: limit(input.reasonSummary ? redact(input.reasonSummary, root) : null, 500),
+    };
+    const file = auditLogPath(root);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.appendFileSync(file, `${JSON.stringify(event)}\n`, "utf-8");
+    return event.timestamp;
+  } catch {
+    // Audit logging must never block workflow progress.
+    return null;
+  }
+}
+
 export function writeFieldLogEvent(input: WriteFieldLogInput): string | null {
   try {
     const root = projectRoot();
@@ -239,6 +316,8 @@ export function writeFieldLogEvent(input: WriteFieldLogInput): string | null {
     const file = fieldLogPath(root);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.appendFileSync(file, `${JSON.stringify(event)}\n`, "utf-8");
+    const auditEvent = auditEventFromFieldLog(input);
+    if (auditEvent) writeAuditLogEvent(auditEvent);
     return event.eventId;
   } catch {
     // Field logging must never block the workflow gate itself.

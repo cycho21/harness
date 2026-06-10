@@ -13,6 +13,7 @@ import {
 } from "./core";
 import { HARNESS_TOKEN_TYPES } from "./runtime-state";
 import { formatWorkflowAction } from "./format";
+import { writeAuditLogEvent } from "./field-log";
 import { formatWorkflowGateBlockedMessage } from "./gate-runner";
 
 export type WorkflowApprovalState = {
@@ -71,6 +72,17 @@ export async function executeWorkflowApproval(
 
   const planReviewPrecheck = await deps.precheckPlanReviewBeforeApproval(ctx);
   if (!planReviewPrecheck.ok) {
+    writeAuditLogEvent({
+      eventType: "approval_boundary_anomaly",
+      workflow: state.workflow,
+      phase: state.workflow.phase,
+      fromPhase: state.workflow.phase,
+      toPhase: nextPhase,
+      gate: "dpaa",
+      result: "precheck_blocked_before_dialog",
+      severity: "warning",
+      reasonSummary: "Implementation approval dialog was not shown because the plan_review to implement DPAA precheck blocked first.",
+    });
     return { content: [{ type: "text", text: planReviewPrecheck.text }], details: { ok: false, reason: "dpaa-precheck-failed" } };
   }
 
@@ -163,6 +175,16 @@ export async function executeWorkflowApproval(
 
   const transitions = result.transitions ?? [];
   transitions.forEach((t) => {
+    writeAuditLogEvent({
+      eventType: "transition",
+      workflowId,
+      fromPhase: t.from,
+      toPhase: t.to,
+      phase: t.to,
+      result: "success",
+      severity: "info",
+      reasonSummary: `Workflow transition ${t.from} -> ${t.to}`,
+    });
     if (t.from === "plan_review" && t.to === "implement") {
       const dpaaTx = transitions.find((tx) => tx.from === "plan_review" && tx.to === "implement");
       state.dpaaGuardSatisfiedToken = { workflowId, issuedAt: Date.now(), reason: "user_approved", planSha256: dpaaTx?.planSha256 };

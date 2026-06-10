@@ -56,7 +56,13 @@ echo "dest:   $DEST"
 echo "components: $COMPONENTS"
 [ "$DRY_RUN" -eq 1 ] && echo "mode:   dry-run"
 
-if [ -n "$REF" ]; then git clone --depth 1 --branch "$REF" "$REPO" "$CLONE_DIR"; else git clone --depth 1 "$REPO" "$CLONE_DIR"; fi
+if [ -d "$REPO/target" ] && [ -z "$REF" ]; then
+  CLONE_DIR=$(cd "$REPO" && pwd)
+elif [ -n "$REF" ]; then
+  git clone --depth 1 --branch "$REF" "$REPO" "$CLONE_DIR"
+else
+  git clone --depth 1 "$REPO" "$CLONE_DIR"
+fi
 TEMPLATE="$CLONE_DIR/target"
 [ -d "$TEMPLATE" ] || { echo "Template directory not found in cloned repo: target" >&2; exit 1; }
 

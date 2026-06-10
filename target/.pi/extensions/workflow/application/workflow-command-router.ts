@@ -29,7 +29,7 @@ import {
   type WorkflowInstance,
   type WorkflowPhase,
 } from "../core";
-import { writeFieldLogEvent } from "../field-log";
+import { writeAuditLogEvent, writeFieldLogEvent } from "../field-log";
 import {
   createManualWorkspaceCheckpoint,
   formatManualWorkspaceCheckpoints,
@@ -295,6 +295,17 @@ pi.registerCommand("workflow", {
       }
       const slashPlanReviewPrecheck = await precheckPlanReviewBeforeApproval(ctx);
       if (!slashPlanReviewPrecheck.ok) {
+        writeAuditLogEvent({
+          eventType: "approval_boundary_anomaly",
+          workflow: state.workflow,
+          phase: state.workflow?.phase,
+          fromPhase: state.workflow?.phase,
+          toPhase: nextPhase,
+          gate: "dpaa",
+          result: "precheck_blocked_before_dialog",
+          severity: "warning",
+          reasonSummary: "Implementation approval dialog was not shown because the slash-command DPAA precheck blocked first.",
+        });
         ctx.ui.notify(slashPlanReviewPrecheck.text, "warning");
         return;
       }
@@ -314,7 +325,9 @@ pi.registerCommand("workflow", {
       const approvedPlanSha256 = state.dpaaGuardSatisfiedToken?.planSha256;
       const result = await advanceWorkflow(state.workflow, "user_approved", { approvedPlanSha256 });
       if (!result.ok) {
-        if (result.gate) { state.gateFailures.set(result.gate, (state.gateFailures.get(result.gate) ?? 0) + 1); }
+        if (result.gate) {
+          state.gateFailures.set(result.gate, (state.gateFailures.get(result.gate) ?? 0) + 1);
+        }
         refreshBoard(ctx);
         refreshStatus(ctx);
         ctx.ui.notify(["게이트가 워크플로우 전환을 차단했습니다. 근본 원인을 해결한 후 /workflow approve를 다시 실행하세요.", "Default handling: do not ask the user for a skip first. Fix the underlying cause within the current phase when possible, then retry the workflow transition. Ask the user only for product/architecture input, an approval boundary, or an accepted-risk exception.", "", result.message, "", formatWorkflowAction(state.workflow)].join("\n"), "warning");
@@ -322,6 +335,16 @@ pi.registerCommand("workflow", {
       }
       const transitions = result.transitions ?? [];
       transitions.forEach((t) => {
+        writeAuditLogEvent({
+          eventType: "transition",
+          workflowId,
+          fromPhase: t.from,
+          toPhase: t.to,
+          phase: t.to,
+          result: "success",
+          severity: "info",
+          reasonSummary: `Workflow transition ${t.from} -> ${t.to}`,
+        });
         if (t.from === "plan_review" && t.to === "implement") {
           state.gateFailures.delete("dpaa");
           clearPendingWorkflowSteersForPhase(workflowId, "plan_review");
