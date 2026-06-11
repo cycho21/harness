@@ -71,6 +71,8 @@ DPAA와 SBADR은 상호 보완적입니다.
 
 고위험 plan은 `plan_review`에서 추가 consensus 절차를 요구합니다. Plan metadata가 `Risk: high`, `Ambiguity gate: strict`, 또는 `Work type: api|security|migration|data|deploy`이면 구현 승인 전에 Architect/Critic 관점으로 feasibility/testability gap을 검토하고 plan을 보수해야 합니다.
 
+긴 세션을 안전하게 압축하기 위한 `compact-handoff` skill도 포함됩니다. 이 skill은 현재 workflow phase, 결정, artifact, 변경 파일, 검증, 다음 작업, guard/risk 상태를 짧은 resume note로 정리하지만 native compaction 명령을 대신 실행하지는 않습니다. 큰 review/trace/verification/DPAA 출력은 `target/.pi/extensions/workflow/artifact-descriptor.ts`의 descriptor contract(`kind`, `path`, `producer`, `retention`, `sizeBytes`, `sha256`, `summary`)로 파일 참조화할 수 있게 표준 필드를 제공합니다. `tool-error-recovery` skill은 실패한 tool/command/guard/edit/transition을 retryability 기준으로 분류하고, 안전한 다음 복구 조치를 제시합니다. `worktree-safety` skill은 `.worktrees/` 전용 생성, dirty worktree 보존, symlink 거부, stale directory 삭제 금지 같은 worktree 안전 규칙을 명시합니다.
+
 | | DPAA | SBADR |
 |---|---|---|
 | 방식 | rule-based, 서버 불필요 | Stanford CoreNLP 의존 파싱 |
@@ -460,7 +462,7 @@ redacted export:
 /workflow failures export
 ```
 
-`.project-memory/harness/audit.jsonl`은 별도 JSON Lines audit stream입니다. `transition`, `guard_block`, `guard_skip`, `approval_boundary_anomaly` 이벤트를 최소 필드로 기록하며 raw prompt/transcript는 저장하지 않습니다. guard 복구 절차와 승인 메시지 미표시 사례는 [`docs/workflow-guard-recovery.md`](docs/workflow-guard-recovery.md)에 정리되어 있습니다.
+`.project-memory/harness/audit.jsonl`은 별도 JSON Lines audit stream입니다. `transition`, `guard_block`, `guard_skip`, `approval_boundary_anomaly` 이벤트를 최소 필드로 기록하며 raw prompt/transcript는 저장하지 않습니다. guard 복구 절차와 승인 메시지 미표시 사례는 [`docs/workflow-guard-recovery.md`](docs/workflow-guard-recovery.md)에 정리되어 있습니다. `/workflow start`부터 continuation, guard, review, commit, push, recovery까지의 runtime event 흐름은 [`docs/workflow-runtime-events.md`](docs/workflow-runtime-events.md)에 요약되어 있습니다. LLM-facing prompt와 protocol 문구 중 테스트로 고정해야 하는 계약은 [`docs/workflow-prompt-contracts.md`](docs/workflow-prompt-contracts.md)에 정리되어 있습니다.
 
 `.project-memory/`는 첫 write 시 `.git/info/exclude`에 추가되어 실수로 commit되지 않도록 보호됩니다.
 

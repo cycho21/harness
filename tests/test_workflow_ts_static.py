@@ -340,6 +340,69 @@ class TestTraceAndConsensusProtocols:
         assert "Critic review" in plan_template
 
 
+class TestCompactionAndArtifactContracts:
+    def test_compact_handoff_skill_documents_resume_contract(self):
+        skill = (ROOT / "target" / ".pi" / "skills" / "compact-handoff" / "SKILL.md").read_text(encoding="utf-8")
+        assert "Compact Handoff" in skill
+        assert "Workflow State" in skill
+        assert "Verification Evidence" in skill
+        assert "Guard State" in skill
+        assert "must not claim to run" in skill
+
+    def test_artifact_descriptor_contract_has_required_fields(self):
+        src = _src("artifact-descriptor.ts")
+        for token in ["ArtifactDescriptor", "kind", "path", "producer", "retention", "sizeBytes", "sha256", "summary"]:
+            assert token in src
+        assert "createArtifactHandoff" in src
+        assert "DEFAULT_INLINE_ARTIFACT_THRESHOLD_BYTES" in src
+
+    def test_workflow_docs_record_abort_and_descriptor_contracts(self):
+        guide = (ROOT / "target" / ".pi" / "WORKFLOW.md").read_text(encoding="utf-8")
+        assert "Abort/cancel semantics" in guide
+        assert "does not create guard evidence" in guide
+        assert "Large handoffs should use an artifact descriptor" in guide
+
+    def test_tool_error_recovery_skill_documents_retryability(self):
+        skill = (ROOT / "target" / ".pi" / "skills" / "tool-error-recovery" / "SKILL.md").read_text(encoding="utf-8")
+        assert "Retryability" in skill
+        assert "workflow_apply_approved_edit" in skill
+        assert "DPAA/SBADR failure" in skill
+        assert "Workspace mismatch" in skill
+        assert "Do not silently retry mutating operations" in skill
+
+    def test_worktree_safety_skill_documents_cleanup_guards(self):
+        skill = (ROOT / "target" / ".pi" / "skills" / "worktree-safety" / "SKILL.md").read_text(encoding="utf-8")
+        assert "project-root `.worktrees/`" in skill
+        assert "Do not remove dirty worktrees" in skill
+        assert "Refuse symlinked worktree paths" in skill
+        assert "Do not delete a stale plain directory automatically" in skill
+
+    def test_workflow_guide_documents_phase_protection_levels(self):
+        guide = (ROOT / "target" / ".pi" / "WORKFLOW.md").read_text(encoding="utf-8")
+        assert "Phase Protection Levels" in guide
+        assert "light" in guide and "medium" in guide and "heavy" in guide and "terminal" in guide
+        assert "do not proceed until required review/gate evidence exists" in guide
+        assert "They do not replace mechanical guard evidence" in guide
+
+    def test_runtime_events_doc_covers_main_flow(self):
+        doc = (ROOT / "docs" / "workflow-runtime-events.md").read_text(encoding="utf-8")
+        assert "Start Flow" in doc
+        assert "workflow_interview_wizard" in doc
+        assert "DPAA/SBADR precheck" in doc
+        assert "git push" in doc
+        assert "/workflow trace" in doc
+        assert "compact-handoff" in doc
+
+    def test_prompt_contracts_doc_lists_contract_surfaces(self):
+        doc = (ROOT / "docs" / "workflow-prompt-contracts.md").read_text(encoding="utf-8")
+        assert "Workflow Prompt Contracts" in doc
+        assert "[LLM WORKFLOW ACTION]" in doc
+        assert "interview wizard kickoff rules" in doc
+        assert "high-risk consensus guidance" in doc
+        assert "submit_review_package" in doc
+        assert "real `git push` completion event" in doc
+
+
 # ---------------------------------------------------------------------------
 # format.ts — phase guidance
 # ---------------------------------------------------------------------------

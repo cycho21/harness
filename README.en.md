@@ -80,6 +80,8 @@ The template also includes supporting reasoning-protocol skills. `trace` narrows
 
 High-risk plans require an extra consensus procedure in `plan_review`. When plan metadata says `Risk: high`, `Ambiguity gate: strict`, or `Work type: api|security|migration|data|deploy`, the LLM must run Architect/Critic-style feasibility and testability review and repair the plan before requesting implementation approval.
 
+The template also includes a `compact-handoff` skill for safe manual context compaction. It summarizes the current workflow phase, decisions, artifacts, changed files, verification, next action, and guard/risk state as a concise resume note, but it does not invoke native compaction commands. Large review/trace/verification/DPAA outputs can use the descriptor contract in `target/.pi/extensions/workflow/artifact-descriptor.ts` with standard fields (`kind`, `path`, `producer`, `retention`, `sizeBytes`, `sha256`, and `summary`) instead of raw inline content. The `tool-error-recovery` skill classifies failed tool/command/guard/edit/transition attempts by retryability and provides the next safe recovery action. The `worktree-safety` skill records worktree safety rules such as `.worktrees/`-only placement, dirty worktree preservation, symlink refusal, and no automatic deletion of stale directories.
+
 Harness failures are logged locally under `.project-memory/harness/events.jsonl` when gates block or are explicitly skipped. `/workflow failures` shows recent events plus category/severity counts so recurring guard friction or policy false positives are easy to spot. The separate audit stream at `.project-memory/harness/audit.jsonl` records `transition`, `guard_block`, `guard_skip`, and `approval_boundary_anomaly` events with minimal fields and without raw prompt/transcript content. Review and export redacted field logs with:
 
 ```text
@@ -87,7 +89,7 @@ Harness failures are logged locally under `.project-memory/harness/events.jsonl`
 /workflow failures export
 ```
 
-Guard recovery procedures and the missing approval dialog incident are documented in [`docs/workflow-guard-recovery.md`](docs/workflow-guard-recovery.md).
+Guard recovery procedures and the missing approval dialog incident are documented in [`docs/workflow-guard-recovery.md`](docs/workflow-guard-recovery.md). The runtime event flow from `/workflow start` through continuation, guards, review, commit, push, and recovery is summarized in [`docs/workflow-runtime-events.md`](docs/workflow-runtime-events.md). LLM-facing prompt and protocol text that should be pinned by tests is documented in [`docs/workflow-prompt-contracts.md`](docs/workflow-prompt-contracts.md).
 
 External memory is stored separately under `.project-memory/memory/`. It starts as a small, user-governed memory layer: manually remember durable facts, search/list them, disable incorrect entries, and inspect what was injected into the prompt. Retrieval/injection tracking is recorded as ids/hashes/counts rather than raw prompts. The extension also adds `.project-memory/` to `.git/info/exclude` on first write so local memory is not accidentally committed.
 

@@ -36,13 +36,28 @@ interview
 - The only user-approval boundary is `commit → push`. Everything from interview through commit is autonomous.
 - Auto-chain sequence: `interview → plan → plan_review → implement → code_review → review_approved → document → commit`. Each transition is automatic once the phase work is complete and guards pass. `code_review → review_approved` is triggered by `submit_review_package` after main review, independent review, and quality gates pass.
 - The extension injects mechanical reminders instead of blocking for easy-to-forget deliverables: documentation markdown/HTML/indexes, verification evidence before commit, review package summary in code review, commit summary/message, and field-log evidence for harness-runtime changes. Address each reminder or explicitly state why it is not applicable.
+- For long sessions, use the `compact-handoff` skill before manual compaction. It prepares a concise resume note but does not invoke compaction itself.
 - Natural-language approval is accepted only from the interactive user.
 - If plan metadata says `Risk: high`, `Ambiguity gate: strict`, or `Work type: api|security|migration|data|deploy`, perform an Architect/Critic consensus review in `plan_review` and repair feasibility/testability gaps before implementation approval.
 - If a DPAA/SBADR guard blocks, attempt to repair the plan autonomously (rewrite vague sentences, add missing metrics, remove placeholders, fix syntactic ambiguity) and retry `/workflow approve`. Repeat until DPAA PASS or a genuine business decision is required. Only then ask the user.
 - For all other guards, report the blocker and wait. Do not bypass or simulate guard results.
 - Modifying `.pi/extensions/**` or `target/.pi/extensions/**` requires explicit interactive user approval for that tool call. The approval is extension in-memory only; do not create approval files.
 - Do not create approval artifacts or authority files. Guard satisfaction comes from workflow phase, transition history, and extension-recorded evidence.
+- Abort/cancel semantics: `/workflow abort` stops the active workflow only after interactive confirmation; it does not create guard evidence, does not imply DPAA/code-review/quality/push approval, and should preserve dirty workspace changes for explicit user handling.
 - Keep changes surgical: touch only files required by the current phase/task.
+
+## Phase Protection Levels
+
+Protection levels describe how aggressively the LLM and extension should avoid accidental progress or mutation in each phase.
+
+| Level | Meaning | Phases |
+|------|---------|--------|
+| light | Guidance-focused; normal edits/checks are allowed when in scope. | `interview`, `plan`, `document` |
+| medium | Evidence-focused; completion claims require explicit artifacts or verification. | `implement`, `commit` |
+| heavy | Guard-focused; do not proceed until required review/gate evidence exists. | `plan_review`, `code_review`, `push` |
+| terminal | No procedural continuation without a new workflow. | `done` |
+
+Use these levels as design guidance for new reminders, tool policy, and recovery behavior. They do not replace mechanical guard evidence.
 
 ## Mechanical Guards
 
@@ -64,6 +79,7 @@ One-use gate exceptions exist only for exceptional, user-confirmed cases via `/w
 - English DPAA artifacts: `.ai/interview/spec.md`, `.ai/interview/plan.md`
 - DPAA snapshots/receipts: `.ai/interview/runs/<workflow-id>/...`
 - Feature docs: `docs/feat/<feature-name>.md` and rendered HTML when required
+- Large handoffs should use an artifact descriptor instead of raw inline content. Descriptor fields are `kind`, `path`, `producer`, `retention`, `sizeBytes`, `sha256`, and optional `summary`.
 
 ## Branch / Task Hints
 
