@@ -73,6 +73,37 @@ export function parseWorkflowCommand(input: string): WorkflowCommandRequest {
   return { command, rest };
 }
 
+function formatConditionalProtocolHints(state: WorkflowRuntimeState): string {
+  const workflow = state.workflow;
+  if (!workflow) return "";
+
+  const hints: string[] = [];
+  const workspace = validateWorkflowWorkspace(workflow);
+  if (!workspace.ok) {
+    hints.push("- workspace mismatch → use continuation-safety before mutating; use worktree-safety if a worktree is involved.");
+  }
+
+  const failedGates = Array.from(state.gateFailures.entries()).filter(([, count]) => count > 0);
+  if (failedGates.length > 0) {
+    hints.push(`- guard failure(s): ${failedGates.map(([gate, count]) => `${gate}×${count}`).join(", ")} → use continuation-safety before retrying.`);
+  }
+
+  if ((state.gateFailures.get("dpaa") ?? 0) >= 2) {
+    hints.push("- repeated DPAA/SBADR failure → use trace before more plan rewrites.");
+  }
+
+  if (workflow.phase === "commit" && state.recentVerificationCommands.length === 0) {
+    hints.push("- no recent verification evidence → use evidence-verification before committing.");
+  }
+
+  if (workflow.history.length >= 8) {
+    hints.push("- long workflow history → use compact-handoff before manual context compaction.");
+  }
+
+  if (hints.length === 0) return "";
+  return ["Conditional protocol hints (triggered only):", ...hints].join("\n");
+}
+
 export function registerWorkflowCommand(pi: ExtensionAPI, deps: WorkflowCommandRouterDeps): void {
   const {
     state,
@@ -617,7 +648,15 @@ pi.registerCommand("workflow", {
 
     if (command === "status") {
       if (state.workflow) {
-        ctx.ui.notify([formatWorkflowStatus(state.workflow), "", formatGuardMemoryStatus(), "", formatWorkflowAction(state.workflow)].join("\n"), "info");
+        const protocolHints = formatConditionalProtocolHints(state);
+        ctx.ui.notify([
+          formatWorkflowStatus(state.workflow),
+          "",
+          formatGuardMemoryStatus(),
+          ...(protocolHints ? ["", protocolHints] : []),
+          "",
+          formatWorkflowAction(state.workflow),
+        ].join("\n"), "info");
         return;
       }
 
@@ -708,7 +747,15 @@ pi.registerCommand("workflow", {
       return;
     }
 
-    ctx.ui.notify([formatWorkflowStatus(state.workflow), "", formatGuardMemoryStatus(), "", formatWorkflowAction(state.workflow)].join("\n"), "info");
+    const protocolHints = formatConditionalProtocolHints(state);
+    ctx.ui.notify([
+      formatWorkflowStatus(state.workflow),
+      "",
+      formatGuardMemoryStatus(),
+      ...(protocolHints ? ["", protocolHints] : []),
+      "",
+      formatWorkflowAction(state.workflow),
+    ].join("\n"), "info");
   },
 });
 

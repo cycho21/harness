@@ -46,7 +46,7 @@ https://github.com/yeachan-heo/oh-my-claudecode
 | Dogfood/runtime fixture benchmarks | Runtime fixture tests now cover interview wizard topology/clarity wrapping, `/workflow trace` routing, and high-risk plan-review continuation prompts; full manual dogfood is still pending | Extend existing workflow runtime tests for new behavior, using `evidence-verification` for evidence. |
 | Phase protection levels | Documented only; not a hard gate taxonomy | Mechanize only where a concrete phase safety bug appears. |
 | Compact lifecycle | `compact-handoff` exists; no automatic resume validation | Extend `compact-handoff`, do not add a separate resume skill. |
-| Status/HUD surfacing | Not implemented beyond existing workflow status/docs | Add status hints only if they reduce confusion; avoid making conditional protocols look mandatory. |
+| Status/HUD surfacing | `/workflow status` now shows conditional protocol hints only when runtime triggers exist, such as missing commit verification evidence; no always-on checklist is added | Add more status hints only for concrete triggers; avoid making conditional protocols look mandatory. |
 | Bridge routing/fallback | Runtime fixture tests now cover trace observation-missing fallback, sendUserMessage-unavailable fallback, and unknown-command status fallback; a full OMC-style routing matrix is not adopted | Prefer targeted command-router fixture tests over new protocol docs. |
 | Security/review hardening | Some path/policy/worktree rules exist | Add focused tests/rules for concrete protected-path or policy failures. |
 
@@ -74,6 +74,6 @@ https://github.com/yeachan-heo/oh-my-claudecode
 If future work continues OMC borrowing, prioritize:
 
 1. Wiring `artifact-descriptor.ts` into trace/verification/DPAA outputs beyond review packages.
-2. Minimal status surfacing for pending work or last failure, without making protocols mandatory.
+2. Additional status surfacing only for concrete pending-work/last-failure triggers, without making protocols mandatory.
 3. Additional command-router fallback tests only when a new route or capability fallback is added.
 4. Additional manual dogfood transcripts for full `/workflow start` UX.

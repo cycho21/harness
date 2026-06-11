@@ -213,6 +213,61 @@ def test_workflow_extension_runtime_status_without_active_workflow_includes_llm_
     assert "No active workflow" in joined
 
 
+def test_workflow_extension_runtime_status_omits_conditional_protocol_hints_without_triggers(tmp_path):
+    script = textwrap.dedent(
+        r'''
+        const path = require('path');
+        const { createJiti } = require('jiti');
+        process.chdir('target');
+
+        const pi = { events: {}, commands: {}, tools: {}, on(name, fn) { this.events[name] = fn; }, registerCommand(name, spec) { this.commands[name] = spec; }, registerTool(spec) { this.tools[spec.name] = spec; } };
+        const jiti = createJiti(path.resolve('runtime-test.js'), { interopDefault: false });
+        jiti(path.resolve('.pi/extensions/workflow.ts')).default(pi);
+
+        const notifications = [];
+        const ctx = { hasUI: true, ui: { notify: (text, level) => notifications.push({ text, level }), confirm: async () => true } };
+
+        (async () => {
+          await pi.commands.workflow.handler('start Runtime no protocol hints', ctx);
+          await pi.commands.workflow.handler('status', ctx);
+          console.log(JSON.stringify({ status: notifications[notifications.length - 1].text }));
+        })().catch((error) => { console.error(error.stack || String(error)); process.exit(1); });
+        '''
+    )
+    data = _run_node_runtime(script, tmp_path)
+
+    assert "Conditional protocol hints" not in data["status"]
+
+
+def test_workflow_extension_runtime_status_surfaces_evidence_verification_when_commit_lacks_recent_checks(tmp_path):
+    script = textwrap.dedent(
+        r'''
+        const path = require('path');
+        const { createJiti } = require('jiti');
+        process.chdir('target');
+
+        const pi = { events: {}, commands: {}, tools: {}, on(name, fn) { this.events[name] = fn; }, registerCommand(name, spec) { this.commands[name] = spec; }, registerTool(spec) { this.tools[spec.name] = spec; } };
+        const jiti = createJiti(path.resolve('runtime-test.js'), { interopDefault: false });
+        jiti(path.resolve('.pi/extensions/workflow.ts')).default(pi);
+
+        const notifications = [];
+        const ctx = { hasUI: true, ui: { notify: (text, level) => notifications.push({ text, level }), confirm: async () => true } };
+
+        (async () => {
+          await pi.commands.workflow.handler('start Runtime evidence hint', ctx);
+          await pi.commands.workflow.handler('state commit', ctx);
+          await pi.commands.workflow.handler('status', ctx);
+          console.log(JSON.stringify({ status: notifications[notifications.length - 1].text }));
+        })().catch((error) => { console.error(error.stack || String(error)); process.exit(1); });
+        '''
+    )
+    data = _run_node_runtime(script, tmp_path)
+
+    assert "Conditional protocol hints (triggered only):" in data["status"]
+    assert "no recent verification evidence" in data["status"]
+    assert "evidence-verification" in data["status"]
+
+
 def test_workflow_extension_runtime_approve_failures_include_llm_action(tmp_path):
     script = textwrap.dedent(
         r'''
