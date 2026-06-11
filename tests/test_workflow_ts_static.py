@@ -304,6 +304,42 @@ class TestPlanMetadataDocs:
         assert "Work type:" in combined
 
 
+class TestDeepInterviewLiteWizard:
+    def test_workflow_tool_adds_topology_and_clarity_questions(self):
+        src = _workflow_src()
+        assert "buildDeepInterviewLiteQuestions" in src
+        assert "round_0_topology" in src
+        assert "clarity_checkpoint" in src
+        assert "deep-interview-lite" in src
+
+    def test_workflow_start_prompt_mentions_deep_interview_lite_followups(self):
+        src = _src("application/workflow-command-router.ts")
+        assert "Round 0 topology confirmation" in src
+        assert "clarity checkpoint" in src
+        assert "weakest remaining clarity dimension" in src
+        assert "inspect narrow repo evidence" in src
+
+
+class TestTraceAndConsensusProtocols:
+    def test_workflow_trace_command_is_registered(self):
+        src = _src("application/workflow-command-router.ts")
+        assert "trace <observation>" in src
+        assert "Run the harness trace protocol" in src
+        assert "Discriminating Probe" in src
+
+    def test_plan_review_continuation_mentions_high_risk_consensus(self):
+        src = _src("application/continuation.ts")
+        assert "high-risk" in src
+        assert "Architect/Critic consensus review" in src
+        assert "Work type: api/security/migration/data/deploy" in src
+
+    def test_plan_template_documents_high_risk_consensus(self):
+        plan_template = (ROOT / "target" / ".pi" / "skills" / "planning-and-task-breakdown" / "references" / "plan-template.md").read_text(encoding="utf-8")
+        assert "High-Risk Consensus Review" in plan_template
+        assert "Architect review" in plan_template
+        assert "Critic review" in plan_template
+
+
 # ---------------------------------------------------------------------------
 # format.ts — phase guidance
 # ---------------------------------------------------------------------------

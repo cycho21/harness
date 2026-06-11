@@ -21,7 +21,7 @@ interview
 |------|---------|------------------------|
 | `interview` | Clarify requirements and unknowns. | Auto-advances to `plan` after user approval starts forward progress. |
 | `plan` | Write/update spec + plan artifacts. | Auto-advances to `plan_review`; this means "ready for plan review", not plan approval. |
-| `plan_review` | Present plan and resolve ambiguity. | DPAA PASS required before `implement`. Auto-advances on pass; auto-returns to `plan` on fail. |
+| `plan_review` | Present plan and resolve ambiguity. For high-risk plans, run Architect/Critic consensus review before implementation approval. | DPAA PASS required before `implement`. Auto-advances on pass; auto-returns to `plan` on fail. |
 | `implement` | Implement only the approved plan. | Auto-starts review/quality flow after implementation work is ready. |
 | `code_review` | Main-agent and reviewer-agent review/fix/re-review loop. | Auto-advances to `review_approved` after review/quality gates pass. |
 | `review_approved` | Review gates passed. | Auto-advances to `document`. |
@@ -37,6 +37,7 @@ interview
 - Auto-chain sequence: `interview → plan → plan_review → implement → code_review → review_approved → document → commit`. Each transition is automatic once the phase work is complete and guards pass. `code_review → review_approved` is triggered by `submit_review_package` after main review, independent review, and quality gates pass.
 - The extension injects mechanical reminders instead of blocking for easy-to-forget deliverables: documentation markdown/HTML/indexes, verification evidence before commit, review package summary in code review, commit summary/message, and field-log evidence for harness-runtime changes. Address each reminder or explicitly state why it is not applicable.
 - Natural-language approval is accepted only from the interactive user.
+- If plan metadata says `Risk: high`, `Ambiguity gate: strict`, or `Work type: api|security|migration|data|deploy`, perform an Architect/Critic consensus review in `plan_review` and repair feasibility/testability gaps before implementation approval.
 - If a DPAA/SBADR guard blocks, attempt to repair the plan autonomously (rewrite vague sentences, add missing metrics, remove placeholders, fix syntactic ambiguity) and retry `/workflow approve`. Repeat until DPAA PASS or a genuine business decision is required. Only then ask the user.
 - For all other guards, report the blocker and wait. Do not bypass or simulate guard results.
 - Modifying `.pi/extensions/**` or `target/.pi/extensions/**` requires explicit interactive user approval for that tool call. The approval is extension in-memory only; do not create approval files.
@@ -47,6 +48,7 @@ interview
 
 | Guard | Enforced by extension | Notes |
 |------|------------------------|-------|
+| High-risk consensus | `plan_review` LLM procedure | Architect/Critic review is required for high-risk metadata before requesting implementation approval. |
 | DPAA | `plan_review → implement` | Checks the plan and blocks ambiguous implementation. |
 | Code quality | `code_review → review_approved` | Runs `codeQualityGuard` / `HARNESS_CODE_QUALITY_GUARD_CMD`. |
 | Code review | `code_review → review_approved` | `submit_review_package` must include main self-review, independent reviewer/subagent review, quality-gate summary, Critical=0, and Major≤2 before review approval. |

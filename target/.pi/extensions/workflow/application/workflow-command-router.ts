@@ -118,6 +118,7 @@ pi.registerCommand("workflow", {
       approve: "approve — advance next transition; yes/no only at approval boundaries",
       status: "status — 현재 워크플로우 상태 표시",
       doctor: "doctor — check harness runtime",
+      trace: "trace <observation> — evidence-driven causal analysis before fixing",
       failures: "failures — show/export field logs",
       list: "list — show active or persisted workflow",
       load: "load — load persisted workflow",
@@ -190,6 +191,35 @@ pi.registerCommand("workflow", {
       return;
     }
 
+    if (command === "trace") {
+      const observation = rest.join(" ").trim();
+      if (!observation) {
+        ctx.ui.notify("사용법: /workflow trace <관찰된 실패/이상 동작>", "warning");
+        return;
+      }
+      if (typeof (pi as any).sendUserMessage !== "function") {
+        ctx.ui.notify("이 Pi runtime은 trace kickoff 메시지 전송을 지원하지 않습니다.", "warning");
+        return;
+      }
+      const workflowContext = state.workflow
+        ? [`Active workflow: [${state.workflow.phase}] ${state.workflow.title}`, `Branch: ${state.workflow.branch}`, `CWD: ${state.workflow.cwd}`].join("\n")
+        : "No active workflow.";
+      await (pi as any).sendUserMessage([
+        "Run the harness trace protocol before proposing or implementing a fix.",
+        "",
+        "Use Skill(\"trace\") if available, or follow `target/.pi/skills/trace/SKILL.md` exactly.",
+        "",
+        "Observation:",
+        observation,
+        "",
+        "Workflow context:",
+        workflowContext,
+        "",
+        "Required output: Observation, Ranked Hypotheses, Evidence For/Against, Rebuttal Round, Current Best Explanation, Critical Unknown, and one Discriminating Probe. Do not edit files during trace unless the user explicitly asks to proceed after the trace.",
+      ].join("\n"));
+      return;
+    }
+
     if (command === "failures") {
       if (rest[0] === "export") {
         const exported = exportFieldLogs();
@@ -238,9 +268,10 @@ pi.registerCommand("workflow", {
           formatWorkflowAction(wf),
           "",
           "Rules:",
-          "- Call workflow_interview_wizard first. Generate 5 questions tailored to the workflow goal (scope · motivation · acceptance criteria · affected files/modules · constraints/risks). For each question provide 3–5 domain-specific choices drawn from knowledge of the stated goal.",
-          "- After the wizard returns answers, use them as interview context. Ask follow-up questions only for remaining ambiguities.",
-          "- Do not advance to plan until requirements are sufficiently understood.",
+          "- Call workflow_interview_wizard first. Generate 5 baseline questions tailored to the workflow goal (scope · motivation · acceptance criteria · affected files/modules · constraints/risks). The wizard automatically adds Round 0 topology confirmation and a clarity checkpoint.",
+          "- After the wizard returns answers, treat the topology answer as required spec/plan coverage and ask focused follow-up questions for the weakest remaining clarity dimension.",
+          "- For brownfield work, inspect narrow repo evidence before asking direction questions about codebase facts.",
+          "- Do not advance to plan until requirements are sufficiently understood and no clarity dimension remains low unless the user accepts the risk.",
           "- Do not request user approval to start — the user already approved by running /workflow start.",
           "",
           workflowContinuationMarkerComment(marker),

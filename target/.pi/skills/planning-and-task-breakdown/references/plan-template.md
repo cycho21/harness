@@ -21,6 +21,14 @@ Set these fields deliberately so DPAA/SBADR uses the intended strictness before 
 
 Use `advisory` only for low-risk documentation/cosmetic/discovery work. Use `strict` for API contracts, schema/database changes, security/privacy, migrations, data loss, CI/deploy/release, or destructive behavior.
 
+## High-Risk Consensus Review
+
+Required when `Risk: high`, `Ambiguity gate: strict`, or `Work type: api|security|migration|data|deploy`:
+
+- [ ] Architect review: strongest feasibility/architecture objections resolved or explicitly accepted.
+- [ ] Critic review: acceptance criteria, alternatives, risks, and verification steps are testable and coherent.
+- [ ] Plan repaired after review; no major open feasibility or testability gaps remain.
+
 ## Architecture Decisions
 - **Layer separation:** Controller → Service → Repository (no skipping)
 - **DTO/Entity separation:** DTOs for API, Entities for persistence

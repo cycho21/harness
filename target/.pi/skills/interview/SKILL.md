@@ -66,11 +66,13 @@ Do not invoke this skill for a direct edit or implementation request unless the 
 
 ## Phase 1: Interview
 
-Goal: keep asking grouped clarification questions until an implementer could write the spec without making unstated decisions. Do not assume one round is enough; if the answer creates new ambiguity, ask follow-up questions immediately.
+Goal: run a deep-but-light requirements interview until an implementer could write the spec without making unstated decisions. This phase absorbs the useful parts of a Socratic deep interview while leaving planning, DPAA, implementation, and review to the existing workflow.
+
+Default to focused, one-question follow-ups for complex or vague work. Use grouped questions only for the baseline round or for simple factual confirmations. Do not assume one round is enough; if the answer creates new ambiguity, ask follow-up questions immediately.
 
 ### 1.1 First Round — Baseline Understanding
 
-Ask these questions together:
+Ask these questions together unless the user's opening request already answers them:
 
 ```text
 다음 내용을 알려주세요:
@@ -82,34 +84,139 @@ Ask these questions together:
 5. 제약사항이나 알려진 위험이 있나요?
 ```
 
-### 1.2 Ambiguity Detection → Follow-up Questions
+### 1.2 Brownfield Evidence First
 
-After each user answer, list every point where implementation would require judgment. Check for:
+For brownfield work, gather narrow repository evidence before asking the user about facts the code can reveal.
+
+Rules:
+
+- Inspect only the smallest relevant files/modules. Do not perform broad repository exploration unless the user explicitly asks.
+- Cite concrete evidence in the question: file path, symbol, command, guard, policy, or repeated pattern.
+- Ask the user to decide direction, priority, or intent; do not ask them to rediscover codebase facts.
+- If evidence is insufficient, say what was checked and ask a targeted question.
+
+Example:
+
+```text
+확인한 근거:
+- target/.pi/extensions/workflow/gates.ts: DPAA/code-quality gate 판단이 있음
+- target/.pi/WORKFLOW.md: interview → plan → plan_review 흐름이 문서화되어 있음
+
+질문:
+이번 변경은 interview skill의 질문 프로토콜만 강화하면 충분한가요,
+아니면 workflow extension의 phase/gate 동작도 바꿔야 하나요?
+```
+
+### 1.3 Round 0 — Topology Confirmation
+
+Before drilling into details, confirm the top-level scope shape. Extract 1-6 top-level components, outcomes, workstreams, surfaces, integrations, or deliverables that can succeed or fail independently. Do not treat low-level implementation tasks as topology components unless the user framed them as independent outcomes.
+
+Ask a topology confirmation question:
+
+```text
+먼저 범위의 지형도를 확인하겠습니다.
+
+제가 이해한 상위 컴포넌트는 다음과 같습니다:
+
+1. <컴포넌트 A>: <한 문장 설명>
+2. <컴포넌트 B>: <한 문장 설명>
+...
+
+추가, 제거, 병합, 분리, 또는 명시적으로 보류할 항목이 있나요?
+```
+
+After the answer:
+
+- Treat confirmed active components as required spec coverage.
+- Treat deferred components as explicit Out of Scope items with the user's reason when available.
+- If only one component exists, still record it so acceptance criteria and plan steps can map to it.
+
+### 1.4 Clarity Dimensions → Weakest-Dimension Follow-up
+
+After each user answer, assess clarity qualitatively across these dimensions:
+
+- Goal: can the objective be stated without qualifiers?
+- Scope / Out of Scope: are included, excluded, deferred, and optional parts clear?
+- Acceptance Criteria: can success be judged objectively as pass/fail?
+- Constraints / Risks: are limits, compatibility, performance, security, rollback, and dependencies clear enough?
+- Existing Context: for brownfield work, is the relevant code/system context understood well enough to modify safely?
+
+Report the assessment before follow-up when ambiguity remains:
+
+```text
+명확성 점검:
+- 목표: 높음|중간|낮음 — <이유>
+- 범위/비범위: 높음|중간|낮음 — <이유>
+- 완료 기준: 높음|중간|낮음 — <이유>
+- 제약/위험: 높음|중간|낮음 — <이유>
+- 기존 코드 맥락: 높음|중간|낮음|해당 없음 — <이유>
+
+다음 질문 대상: <가장 약한 차원>
+이유: <왜 이 차원이 지금 가장 큰 구현 리스크인지>
+```
+
+Then ask one focused question targeting that weakest dimension. Group at most three small factual subquestions only when they are tightly related and needed to unblock the same dimension.
+
+Check for:
 
 - Acceptance criteria that use subjective terms such as "works well", "better", or "faster".
 - Missing edge cases: empty values, errors, concurrency, permissions, rollback, compatibility.
 - Multiple viable implementation approaches with no selection criteria.
 - Uncertain scope language such as "probably", "usually", or "maybe".
 - Missing compatibility constraints with existing code or systems.
+- Multi-component scope where one detailed component hides under-specified sibling components.
 
-If any ambiguity remains, ask grouped follow-up questions immediately:
+### 1.5 Terminology and Entity Stabilization
+
+If important terms, entities, or workflow concepts are unstable or overlapping, ask a terminology question before writing the spec.
+
+Use when three or more similar concepts appear, or when a term could map to multiple implementation objects.
+
+Example:
 
 ```text
-몇 가지 더 명확히 해야 할 부분이 있어요:
+현재 핵심 용어를 이렇게 이해했습니다:
 
-1. <구체적 질문>
-2. <구체적 질문>
-...
+- Gate: phase 전환을 막거나 허용하는 기계적 검사
+- Reminder: 막지는 않지만 누락을 알려주는 안내
+- Approval boundary: 사용자 확인이 필요한 전환 지점
+
+이 정의가 맞나요? 합치거나 이름을 바꿔야 할 용어가 있나요?
 ```
 
-### 1.3 Exit Criteria
+Carry confirmed terms into the spec's Terminology section.
 
-Proceed to Phase 2 only when both are true:
+### 1.6 Challenge Questions for Long or Expanding Interviews
 
-1. You are confident that a spec can be written without the implementer making additional decisions.
-2. Every acceptance criterion can be judged objectively as pass/fail.
+When the interview reaches three or more follow-up rounds, ambiguity stalls, or scope keeps expanding, use one challenge-style question to reduce accidental complexity:
 
-If you are not confident, ask another round. If the user says "just proceed", explicitly state the remaining ambiguity and ask for confirmation before moving on. Do not silently choose an interpretation.
+- Contrarian: ask what would be true if the main assumption were wrong.
+- Simplifier: ask for the smallest useful version that still satisfies the goal.
+- Ontology-style: ask what the core thing fundamentally is when nouns/entities keep shifting.
+
+Examples:
+
+```text
+반대 가정 질문:
+이 기능을 새 gate로 만들지 않고 기존 DPAA/plan_review만 강화한다면 무엇이 부족할까요?
+```
+
+```text
+단순화 질문:
+최소 버전이 “Topology 확인 + clarity report만 추가”라면 충분할까요?
+```
+
+### 1.7 Exit Criteria
+
+Proceed to Phase 2 only when all are true:
+
+1. The confirmed topology is recorded, including active and deferred components.
+2. You are confident that a spec can be written without the implementer making additional decisions.
+3. Every acceptance criterion can be judged objectively as pass/fail.
+4. No clarity dimension remains "낮음" unless the user explicitly accepts the risk.
+5. Brownfield direction questions cite repo evidence or state what evidence was unavailable.
+
+If you are not confident, ask another focused round. If the user says "just proceed", explicitly state the remaining ambiguity, affected topology components, and likely rework risk before asking for confirmation. Do not silently choose an interpretation.
 
 ---
 
@@ -124,11 +231,18 @@ Create these files from the interview context:
 
 ### `.ai/interview/spec.md` — WHAT
 
+Use the same structure for `.ai/interview/spec.ko.md` in Korean and `.ai/interview/spec.md` in English.
+
 ```markdown
 # Task Spec: <title>
 
 ## Problem
 <problem and motivation>
+
+## Topology
+| Component | Status | Description | Coverage / Deferral Note |
+|-----------|--------|-------------|--------------------------|
+| <component> | active|deferred | <description> | <covered criteria or deferral reason> |
 
 ## Acceptance Criteria
 - [ ] <testable criterion 1>
@@ -137,8 +251,11 @@ Create these files from the interview context:
 ## Constraints
 <known constraints, limits, risks>
 
+## Terminology
+- <term>: <confirmed meaning>
+
 ## Out of Scope
-<explicit exclusions>
+<explicit exclusions, including deferred topology components>
 ```
 
 ### `.ai/interview/plan.md` — HOW
@@ -155,6 +272,8 @@ Ambiguity gate: standard
 
 ## Steps
 1. <step> — `path/file`
+   - Component: <topology component>
+   - Acceptance Criteria: <AC id/list>
 2. ...
 
 ## Test Strategy
@@ -175,9 +294,12 @@ Ambiguity gate: standard
 
 Check the plan in this order:
 
+- [ ] Every active topology component has acceptance-criteria coverage or a clear implementation step.
+- [ ] Every deferred topology component appears in Out of Scope with a deferral note.
 - [ ] Every acceptance criterion is testable and unambiguous.
-- [ ] Every plan step maps to at least one acceptance criterion.
+- [ ] Every plan step maps to at least one acceptance criterion and one topology component.
 - [ ] There are no hidden assumptions.
+- [ ] Confirmed terminology is recorded when terms could otherwise conflict.
 - [ ] Out of Scope is explicit.
 - [ ] External dependencies, if any, are listed as risks.
 

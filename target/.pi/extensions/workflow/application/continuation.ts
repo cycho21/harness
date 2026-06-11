@@ -131,7 +131,7 @@ export function createWorkflowContinuationService(state: WorkflowRuntimeState, p
       "- Continue only within the current phase and its required actions.",
       "- The only user-approval boundary is commit → push. All other transitions are autonomous.",
       "- Do not bypass DPAA, SBADR, submit_review_package, quality, policy, or workspace guards.",
-      "- plan_review is a repair loop: if DPAA fails, call workflow_state prev to return to plan, fix the plan, then call workflow_approve to re-enter plan_review. Repeat until DPAA passes.",
+      "- plan_review is a repair loop: if the plan is high-risk (Risk: high, Ambiguity gate: strict, or Work type: api/security/migration/data/deploy), run Architect/Critic consensus review before implementation approval; if DPAA fails, call workflow_state prev to return to plan, fix the plan, then call workflow_approve to re-enter plan_review. Repeat until consensus and DPAA pass.",
       "- code_review is a repair loop: if quality/review issues found, call workflow_state prev to return to implement, fix the issues, then call workflow_approve to re-enter code_review. Repeat until review passes.",
       "- These loops are fully autonomous. Do not ask the user for permission to re-enter a review phase.",
       "",
