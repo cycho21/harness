@@ -1,4 +1,4 @@
-import type { WorkflowInstance, WorkflowPhase } from "./types";
+import type { WorkflowInstance, WorkflowPhase, WorkflowGate } from "./types";
 import { listArtifactSnapshots } from "./artifacts";
 import { validateWorkflowWorkspace, formatWorkspaceMismatch } from "./gates";
 import { getNextPhase } from "./state";
@@ -268,7 +268,7 @@ export function phaseGuidance(phase: WorkflowPhase): string {
 
 export type WorkflowBoardState = {
   workflow: WorkflowInstance | null;
-  gateFailures: Map<string, number>;
+  gateFailures: Map<WorkflowGate, number>;
   dpaaGuardSatisfied: boolean;
   codeQualityGuardSatisfied: boolean;
   reviewPackageSubmitted: boolean;

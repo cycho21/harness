@@ -21,7 +21,6 @@
     "document"
   ],
   "approvalBoundaries": [
-    "plan_review:implement",
     "commit:push"
   ],
   "gates": [
@@ -66,7 +65,7 @@
     "hardRules": [
       "Follow the current workflow phase.",
       "Never skip phases; only advance to the next phase.",
-      "User approval is required only before implement and before push.",
+      "The only user-approval boundary is commit → push. Everything from interview through commit is autonomous.",
       "In code_review, fix/review/quality loop stays in code_review.",
       "Use subagents for implementation, review, large diffs, and logs.",
       "Keep main context to decisions, changed files, verification, blockers, next phase."
@@ -105,7 +104,7 @@
   "phaseGuidance": {
     "interview": "Clarify requirements only; write interview artifacts before planning.",
     "plan": "Write the implementation plan; do not modify production code yet.",
-    "plan_review": "Wait for explicit approval before implementation.",
+    "plan_review": "Review the plan and run DPAA. Auto-advances to implement on DPAA pass; auto-returns to plan on fail.",
     "implement": "Implement only the approved plan; prefer subagents for context-heavy implementation work.",
     "code_review": "Run self-review, independent/subagent review, and quality gates before review approval.",
     "review_approved": "Prepare documentation after review approval.",

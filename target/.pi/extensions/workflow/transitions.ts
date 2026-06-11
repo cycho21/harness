@@ -10,6 +10,7 @@ import {
   saveWorkflow,
   type WorkflowInstance,
   type WorkflowPhase,
+  type WorkflowGate,
 } from "./core";
 import { HARNESS_TOKEN_TYPES } from "./runtime-state";
 import { formatWorkflowAction } from "./format";
@@ -24,7 +25,7 @@ export type WorkflowApprovalState = {
   codeReviewGuardSatisfiedToken: any;
   pushExecutionGuardSatisfiedToken: any;
   recentVerificationCommands: Array<{ command: string; timestamp: number; phase?: WorkflowPhase }>;
-  gateFailures: Map<string, number>;
+  gateFailures: Map<WorkflowGate, number>;
 };
 
 export type WorkflowApprovalDeps = {

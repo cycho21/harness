@@ -1,4 +1,4 @@
-import type { EditScope, WorkflowInstance, WorkflowPhase } from "./types";
+import type { EditScope, WorkflowInstance, WorkflowPhase, WorkflowGate } from "./types";
 
 export type WorkflowContinuationPending = {
   workflowId: string;
@@ -27,7 +27,7 @@ export type WorkflowRuntimeState = {
   policyApprovals: Array<{ timestamp: number; totalChanged: number; categories: string[]; signature: string }>;
   extensionMutationApprovedForWorkflowId: string | null;
   autoCheckpointForSession: boolean;
-  gateFailures: Map<string, number>;
+  gateFailures: Map<WorkflowGate, number>;
   lastInputCheckpointSignature: string | null;
   recentVerificationCommands: Array<{ command: string; timestamp: number; phase?: string }>;
   reviewPackageToken: null | { workflowId: string; timestamp: number; critical: number; major: number; minor: number; mainSummary: string; reviewerSummary: string; qualitySummary: string };
@@ -55,7 +55,7 @@ export function createWorkflowRuntimeState(): WorkflowRuntimeState {
     policyApprovals: [],
     extensionMutationApprovedForWorkflowId: null,
     autoCheckpointForSession: false,
-    gateFailures: new Map<string, number>(),
+    gateFailures: new Map<WorkflowGate, number>(),
     lastInputCheckpointSignature: null,
     recentVerificationCommands: [],
     reviewPackageToken: null,

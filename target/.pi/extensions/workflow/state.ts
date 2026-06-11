@@ -1,5 +1,5 @@
 import * as fs from "node:fs";
-import type { WorkflowInstance, WorkflowPhase } from "./types";
+import type { WorkflowInstance, WorkflowPhase, WorkflowGate } from "./types";
 import { LEGACY_WORKFLOW_PHASE_ALIASES } from "./types";
 import { createWorkspaceCheckpoint, restoreWorkspaceCheckpoint } from "./checkpoints";
 import { formatWorkspaceMismatch, runPreTransitionGate, validateWorkflowWorkspace } from "./gates";
@@ -50,7 +50,7 @@ export async function advanceWorkflow(
   workflow: WorkflowInstance | null,
   reason: string,
   opts?: { approvedPlanSha256?: string },
-): Promise<{ ok: boolean; message: string; gate?: string; transitions?: WorkflowAdvanceTransition[] }> {
+): Promise<{ ok: boolean; message: string; gate?: WorkflowGate; transitions?: WorkflowAdvanceTransition[] }> {
   if (!workflow) return { ok: false, message: "진행 중인 workflow가 없습니다. /workflow start 를 먼저 실행하세요." };
   const workspace = validateWorkflowWorkspace(workflow);
   if (!workspace.ok) return { ok: false, message: formatWorkspaceMismatch(workspace) };

@@ -169,3 +169,47 @@ def test_tool_tracks_verification_commands():
     assert "recentVerificationCommands" in workflow_src
     # code-quality and project-test should be tracked
     assert '"code-quality"' in policy_src or "'code-quality'" in policy_src
+
+
+# ── allowUserArgs + git-commit ────────────────────────────────────────────────
+
+def test_allow_user_args_field_in_command_spec():
+    src = TYPES.read_text(encoding="utf-8")
+    assert "allowUserArgs" in src
+
+
+def test_git_commit_command_in_catalog():
+    src = CATALOG.read_text(encoding="utf-8")
+    assert '"git-commit"' in src
+    assert "allowUserArgs: true" in src
+
+
+def test_git_commit_allowed_in_commit_phase():
+    src = CATALOG.read_text(encoding="utf-8")
+    # git-commit spec must list "commit" in allowedPhases
+    assert '"commit"' in src
+
+
+def test_git_add_patch_not_in_catalog():
+    """git add -p is interactive and cannot run with stdio:pipe."""
+    src = CATALOG.read_text(encoding="utf-8")
+    assert '"git-add-patch"' not in src
+
+
+def test_workflow_run_command_accepts_args_parameter():
+    src = WORKFLOW.read_text(encoding="utf-8")
+    # args parameter must be defined (Type.Optional(Type.Array(...))) and passed as userArgs
+    assert "Type.Array" in src and "userArgs" in src
+
+
+def test_user_args_rejected_for_non_allow_commands():
+    policy_src = (WORKFLOW.parent / "workflow" / "command-policy.ts").read_text(encoding="utf-8")
+    assert "user-args-not-allowed" in policy_src
+    assert "allowUserArgs" in policy_src
+
+
+def test_run_catalog_command_accepts_extra_args():
+    src = CATALOG.read_text(encoding="utf-8")
+    assert "extraArgs" in src
+    # extra args are appended to fixedArgs, not prepended or shell-expanded
+    assert "fixedArgs, ...extraArgs" in src or "[...spec.fixedArgs, ...extraArgs]" in src

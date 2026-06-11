@@ -277,7 +277,9 @@ def test_fake_llm_edit_approval_rejection_path_validation_and_scope_guard(tmp_pa
 
         dump({ observations, rejectedFile: fileText('src/rejected.txt'), escapeFile: fileText('../escape.txt') });
         ''',
-        confirm_answers=[True, True, True, False],
+        # prerequisite(True) + skip-dpaa(True) + edit-rejection(False) = 3 confirms
+        # (plan_review:implement approval boundary was removed)
+        confirm_answers=[True, True, False],
     )
 
     data = _run_fake_llm_session(script, tmp_path)
@@ -296,7 +298,7 @@ def test_fake_llm_edit_approval_rejection_path_validation_and_scope_guard(tmp_pa
     assert "Invalid operation" in observations["badOperationText"]
     assert data["rejectedFile"] is None
     assert data["escapeFile"] is None
-    assert data["confirmAnswersSeen"] == [True, True, True, False]
+    assert data["confirmAnswersSeen"] == [True, True, False]
 
 
 def test_fake_llm_review_package_rejects_missing_and_blocking_findings_before_accepting(tmp_path):

@@ -883,3 +883,61 @@ def test_no_ui_blocks_accepted_risk_and_destructive_workflow_commands(tmp_path):
     assert "대화형 UI가 없어 workflow state 수동 복구를 승인할 수 없습니다" in joined
     assert "대화형 UI가 없어 workflow 종료를 승인할 수 없습니다" in joined
     assert "Current phase: interview" in joined
+
+
+def test_plan_review_to_implement_requires_no_user_approval(tmp_path):
+    """plan_review → implement 전환은 유저 승인 없이 자동으로 진행되어야 한다."""
+    script = textwrap.dedent(
+        r'''
+        const path = require('path');
+        const { createJiti } = require('jiti');
+        process.chdir('target');
+
+        const pi = {
+          events: {}, commands: {}, tools: {},
+          on(name, fn) { this.events[name] = fn; },
+          registerCommand(name, spec) { this.commands[name] = spec; },
+          registerTool(spec) { this.tools[spec.name] = spec; },
+        };
+        const jiti = createJiti(path.resolve('runtime-test.js'), { interopDefault: false });
+        jiti(path.resolve('.pi/extensions/workflow.ts')).default(pi);
+
+        const confirms = [];
+        const ctx = {
+          hasUI: true,
+          ui: {
+            notify: () => {},
+            // Track every confirm dialog title so we can verify none was shown for plan_review→implement
+            confirm: async (title) => { confirms.push(title); return true; },
+          },
+        };
+
+        (async () => {
+          await pi.commands.workflow.handler('start Auto advance test', ctx);
+          // advance: interview → plan → plan_review (auto, no confirm expected)
+          await pi.commands.workflow.handler('approve', ctx);
+
+          // Skip DPAA so the gate doesn't block
+          await pi.commands.workflow.handler('skip dpaa test skip to verify no confirm dialog', ctx);
+
+          // approve from plan_review → should auto-advance to implement WITHOUT showing a confirm dialog
+          const result = await pi.tools.workflow_approve.execute(
+            'approve-1', { summary: 'plan done, advance to implement' },
+            undefined, undefined, ctx
+          );
+          console.log(JSON.stringify({ result: result.details, confirms }));
+        })().catch((error) => { console.error(error.stack || String(error)); process.exit(1); });
+        '''
+    )
+    data = _run_node_runtime(script, tmp_path)
+
+    # Transition must succeed
+    assert data["result"]["ok"] is True
+    transitions = data["result"].get("transitions", [])
+    assert any("plan_review" in str(t) and "implement" in str(t) for t in transitions), \
+        f"Expected plan_review→implement transition, got: {transitions}"
+
+    # No confirm dialog should have been shown for this transition
+    plan_review_confirms = [c for c in data["confirms"] if "plan_review" in c or "implement" in c]
+    assert plan_review_confirms == [], \
+        f"Unexpected confirm dialogs for plan_review→implement: {plan_review_confirms}"

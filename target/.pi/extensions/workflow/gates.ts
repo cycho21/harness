@@ -37,19 +37,32 @@ function getChangedFileAbsPaths(root: string): string[] {
 }
 
 /**
- * Extracts absolute file paths that appear in quality tool violation output.
- * Handles Checkstyle ([ant:checkstyle] … /path/File.java:N:) and PMD (/path/File.java:N).
- * Returns empty array when no paths could be parsed (format unknown → caller falls back).
+ * Extracts file paths that appear in quality tool violation output.
+ * Handles:
+ *   - Checkstyle: [ant:checkstyle] ... /abs/path/File.java:N:
+ *   - PMD:         /abs/path/File.java:N
+ *   - Relative:    src/main/java/com/example/File.java:N
+ * Returns empty array only when truly no paths could be parsed.
  */
-function extractViolationFilePaths(output: string, root: string): string[] {
+export function extractViolationFilePaths(output: string, root: string): string[] {
   const results = new Set<string>();
-  // Match Unix absolute paths: /some/path/File.java:N  or  C:\path\File.java:N
-  const RE = /(?:^|[\s\[\("'])((?:[A-Za-z]:[\\]|\/)(?:[^\s:"'*?<>|]+[\\])*[^\s:"'*?<>|]+\.(?:java|kt|groovy|scala|xml))(?=:\d)/gm;
+
+  // Pattern 1: absolute paths (Unix /... or Windows C:\... or C:/...)
+  const ABS_RE = /(?:^|[\s\[\("'])((?:[A-Za-z]:[/\\]|\/)[^\s"'*?<>|\[\]]*?\.(?:java|kt|groovy|scala))(?=:\d)/gm;
   let m: RegExpExecArray | null;
-  while ((m = RE.exec(output)) !== null) {
-    const filePath = m[1].trim();
-    if (filePath) results.add(path.normalize(path.resolve(root, filePath)));
+  while ((m = ABS_RE.exec(output)) !== null) {
+    const p = m[1].trim();
+    if (p) results.add(path.normalize(path.resolve(root, p)));
   }
+
+  // Pattern 2: relative paths containing at least one directory separator
+  // e.g. src/main/java/com/example/Foo.java:10
+  const REL_RE = /(?:^|[\s"'])((?:[\w.-]+[/\\])+[\w.-]+\.(?:java|kt|groovy|scala))(?=:\d)/gm;
+  while ((m = REL_RE.exec(output)) !== null) {
+    const p = m[1].trim();
+    if (p) results.add(path.normalize(path.resolve(root, p)));
+  }
+
   return [...results];
 }
 
@@ -338,8 +351,10 @@ export function runCodeQualityGate(workflow: WorkflowInstance): { ok: boolean; m
       // Build system quality command: use execFileSync (structured argv, no shell interpolation)
       // Windows: .bat files need cmd /c wrapper
       let exe = qc!.executable;
-      // Force fresh execution to avoid stale Gradle incremental build cache returning old results.
-      let eArgs = buildSystem.type === "gradle" ? [...qc!.args, "--rerun-tasks"] : [...qc!.args];
+      // Disable Gradle build cache so the gate always uses fresh results.
+      // --no-build-cache is less aggressive than --rerun-tasks: skips the cache
+      // without forcing re-compilation of unchanged sources.
+      let eArgs = buildSystem.type === "gradle" ? [...qc!.args, "--no-build-cache"] : [...qc!.args];
       if (process.platform === "win32" && /\.bat$/i.test(exe)) {
         eArgs = ["/c", exe, ...eArgs];
         exe = "cmd.exe";

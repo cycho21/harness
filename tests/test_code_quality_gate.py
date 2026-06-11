@@ -36,3 +36,51 @@ def test_code_quality_gate_has_explicit_skip_and_phase_guidance():
     assert '"code-quality"' in workflow
     assert "/workflow skip <gate> <사유>" in workflow
     assert "Advancing to review_approved mechanically runs codeQualityGuard" in fmt
+
+
+# ── diff-aware gate + --no-build-cache ────────────────────────────────────────
+
+def test_code_quality_gate_uses_no_build_cache_not_rerun_tasks():
+    gates = GATES.read_text(encoding="utf-8")
+    assert "--no-build-cache" in gates
+    # --rerun-tasks must not appear as an actual argument (comment mentions are ok)
+    import re
+    actual_uses = re.findall(r'["\']--rerun-tasks["\']', gates)
+    assert actual_uses == [], f"--rerun-tasks used as argument: {actual_uses}"
+
+
+def test_diff_aware_gate_check_function_exists():
+    gates = GATES.read_text(encoding="utf-8")
+    assert "diffAwareGateCheck" in gates
+    assert "extractViolationFilePaths" in gates
+    assert "getChangedFileAbsPaths" in gates
+
+
+def test_extract_violation_file_paths_exported():
+    gates = GATES.read_text(encoding="utf-8")
+    assert "export function extractViolationFilePaths" in gates
+
+
+def test_diff_aware_gate_called_in_quality_gate():
+    gates = GATES.read_text(encoding="utf-8")
+    # diffAwareGateCheck must be invoked inside runCodeQualityGate error path
+    assert "diffAwareGateCheck(" in gates
+    assert "if (diffAware)" in gates or "if (diffAware) return" in gates
+
+
+def test_diff_aware_gate_logs_pre_existing_pass():
+    gates = GATES.read_text(encoding="utf-8")
+    assert "diff-aware-pass" in gates
+    assert "Pre-existing" in gates or "pre-existing" in gates
+
+
+def test_extract_violation_handles_absolute_and_relative_paths():
+    gates = GATES.read_text(encoding="utf-8")
+    # Should have patterns for both absolute (/path or C:\path) and relative paths
+    assert "ABS_RE" in gates
+    assert "REL_RE" in gates
+
+
+def test_changed_files_uses_git_status_porcelain():
+    gates = GATES.read_text(encoding="utf-8")
+    assert "git status --porcelain=v1" in gates
