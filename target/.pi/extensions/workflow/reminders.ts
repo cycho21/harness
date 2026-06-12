@@ -8,6 +8,7 @@ export type ReminderRuntimeSignals = {
   recentVerificationCommands?: Array<{ command: string; timestamp: number; phase?: string }>;
   codeQualityGuardSatisfied?: boolean;
   reviewPackageSubmitted?: boolean;
+  interviewWizardCompleted?: boolean;
   interviewScoreRecorded?: boolean;
 };
 
@@ -114,6 +115,7 @@ function scanVerificationItems(root: string, phase: string, signals: ReminderRun
 
 function scanInterviewScoringItems(phase: string, signals: ReminderRuntimeSignals): string[] {
   if (phase !== "interview") return [];
+  if (!signals.interviewWizardCompleted) return [];  // wizard 완료 전에는 리마인더 불필요
   if (signals.interviewScoreRecorded) return [];
   return [
     "workflow_score_interview has not been called yet. After workflow_interview_wizard completes, evaluate the 5 clarity dimensions (goal/scope/acceptance/constraints/context; each 0-100) and call workflow_score_interview. Any dimension < 60 blocks interview → plan.",

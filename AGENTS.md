@@ -2,6 +2,8 @@
 
 **이 repo는 Pi harness를 개발하는 repo다.** `target/.pi/`가 배포 단위 소스이며, push 후 다른 프로젝트에서 `scripts/update-harness.sh`로 가져다 쓴다. `target/.pi/`를 직접 수정하는 것이 맞고, 이 repo 자체에 harness를 적용하는 게 아니다.
 
+**개발 중 로컬 동기화**: `target/.pi/`를 수정한 후에는 `bash scripts/sync-dev-harness.sh` (Windows: `powershell -File scripts\sync-dev-harness.ps1`)를 실행해 `.pi/`에 반영한다. 이 dev repo 자체가 harness를 `.pi/`에서 로드하므로, 동기화 없이는 테스트와 실제 런타임이 달라진다.
+
 Concise project instructions for Pi. Mechanical workflow enforcement lives in `.pi/extensions/workflow.ts`; this file tells the LLM how to behave.
 
 ## Working Style

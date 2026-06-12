@@ -137,7 +137,9 @@ export function formatWorkflowAction(workflow: WorkflowInstance | null): string 
     case "push":
       lines.push(
         "- Transition mode: guarded execution phase.",
-        "- Required now: run git push only after policy scan approval and valid commit → push transition history.",
+        "- Required now: run git push immediately in this turn — the extension detects the successful push and auto-advances to done.",
+        "- Do NOT call workflow_approve in push phase; it cannot advance push → done and will block.",
+        "- If push execution guard is already satisfied (commit → push approval already recorded), run git push right now without calling workflow_approve again.",
       );
       break;
     case "done":

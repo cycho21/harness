@@ -47,6 +47,7 @@ export function buildWorkflowSystemPromptInjection(state: WorkflowRuntimeState):
     authLines,
     formatWorkflowReminders(scanWorkflowReminders(state.workflow, {
       recentVerificationCommands: state.recentVerificationCommands,
+      interviewWizardCompleted: Boolean(state.workflow && state.interviewWizardCompletedToken?.workflowId === state.workflow.id),
       interviewScoreRecorded: Boolean(state.workflow && state.interviewAmbiguityScoreToken?.workflowId === state.workflow.id),
       codeQualityGuardSatisfied: Boolean(state.workflow && state.codeQualityGuardSatisfiedToken?.workflowId === state.workflow.id),
       reviewPackageSubmitted: Boolean(state.workflow && state.reviewPackageToken?.workflowId === state.workflow.id),

@@ -213,9 +213,9 @@ function buildInterviewWizardCompletion(summaryMarkdown: string): string {
     "   - context (0-100): For brownfield, is the relevant code/system context understood?",
     "   Threshold: any dimension < 60 → call workflow_interview_wizard again with follow-up questions",
     "   targeting only the low-score dimensions, then re-score.",
-    "   Example call:",
-    "   workflow_score_interview({ goal: 85, scope: 70, acceptance: 45, constraints: 80, context: 90,",
-    "     reasoning: \"acceptance unclear: no pass/fail criteria for performance requirement\" })",
+    "   Example call (replace <N> with your actual assessed score — do NOT copy these numbers):",
+    "   workflow_score_interview({ goal: <N>, scope: <N>, acceptance: <N>, constraints: <N>, context: <N>,",
+    "     reasoning: \"<brief explanation of why the lowest-score dimension is unclear>\" })",
     "6. Include the score table in your chat response so the user can see the assessment.",
   ].join("\n");
 }
@@ -357,6 +357,7 @@ export default function (pi: ExtensionAPI) {
     state.codeReviewGuardSatisfiedToken = null;
     state.pushExecutionGuardSatisfiedToken = null;
     state.reviewPackageToken = null;
+    state.interviewWizardCompletedToken = null;
     state.interviewAmbiguityScoreToken = null;
     state.policyApprovals = [];
     state.gateFailures = new Map();
@@ -1199,6 +1200,7 @@ ${formatWorkflowAction(state.workflow)}` }],
           details: { ok: false, cancelled: true },
         };
       }
+      state.interviewWizardCompletedToken = { workflowId: state.workflow.id, completedAt: Date.now() };
       return {
         content: [{ type: "text", text: buildInterviewWizardCompletion(result.summaryMarkdown) }],
         details: { ok: true, answers: result.answers, summaryMarkdown: result.summaryMarkdown, mode: "deep-interview-lite" },
