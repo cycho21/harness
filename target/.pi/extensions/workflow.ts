@@ -854,7 +854,7 @@ export default function (pi: ExtensionAPI) {
                 `🔁 code_review → implement 돌아옴: ${params.reason}`,
                 "",
                 "수정 루프 행동:",
-                "1. 리빰1 사유에서 제시된 문제를 수정하세요.",
+                "1. 리뷰 사유에서 제시된 문제를 수정하세요.",
                 "2. 수정 완료 후 workflow_approve 호출 → code_review 에 재진입합니다.",
                 "3. 리뷰 통과(Critical=0, Major≤2) 시 submit_review_package 호출합니다.",
                 "",

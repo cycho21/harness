@@ -401,7 +401,7 @@ commit → push
   └─ 위험 변경 있으면 policy scan confirmation
 ```
 
-실제 `git push` 시에는 다시 scan합니다.
+push phase에서는 `workflow_run_command`의 `git-push` catalog command가 `git push`를 실행할 수 있습니다. 이 command는 `push` phase에서만 허용되며 추가 인자를 받지 않아 임의 remote/branch/force push를 방지합니다. 실제 `git push` 시에는 다시 scan합니다.
 
 ```text
 동일 workspace risk signature → 추가 확인 없이 통과

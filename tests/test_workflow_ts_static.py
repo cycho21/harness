@@ -655,6 +655,11 @@ class TestWorkflowStateAndPushGuardContracts:
             "workflow.ts must emit a clear message when uncommitted changes block push"
         )
 
+    def test_workflow_state_recovery_message_has_no_known_typo(self):
+        src = _workflow_src()
+        assert "리빰1" not in src
+        assert "리뷰 사유에서 제시된 문제" in src
+
 
 class TestCodeReviewSkillCriticProtocol:
     """Guard that the Critic protocol keywords remain present in the code-review skill."""

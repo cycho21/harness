@@ -41,7 +41,7 @@ def test_catalog_command_result_type_defined():
 # ── COMMAND_CATALOG content ───────────────────────────────────────────────────
 
 REQUIRED_COMMANDS = [
-    "git-status", "git-diff", "git-diff-staged", "git-log",
+    "git-status", "git-diff", "git-diff-staged", "git-log", "git-push",
     "code-quality", "project-test", "project-build",
 ]
 
@@ -188,6 +188,17 @@ def test_git_commit_allowed_in_commit_phase():
     src = CATALOG.read_text(encoding="utf-8")
     # git-commit spec must list "commit" in allowedPhases
     assert '"commit"' in src
+
+
+def test_git_push_command_is_push_phase_only_and_has_fixed_args():
+    src = CATALOG.read_text(encoding="utf-8")
+    assert 'id: "git-push"' in src
+    assert 'description: "Push committed changes to the configured upstream"' in src
+    assert 'fixedArgs: ["push"]' in src
+    assert 'allowedPhases: ["push"]' in src
+    push_entry = src.split('id: "git-push"', 1)[1].split('id: "code-quality"', 1)[0]
+    assert "allowUserArgs" not in push_entry
+    assert 'riskLevel: "medium"' in push_entry
 
 
 def test_git_add_patch_not_in_catalog():
