@@ -94,6 +94,63 @@ def test_runtime_policy_requires_approval_only_for_mutating_runtime_extension_pa
     assert data["nestedRuntime"] is True
 
 
+def test_write_dpaa_receipt_includes_report_descriptor(tmp_path):
+    plan = tmp_path / "plan.md"
+    report = tmp_path / "dpaa-report.json"
+    plan.write_text("# Plan\n", encoding="utf-8")
+    report.write_text('{"level":"PASS","findings":[]}\n', encoding="utf-8")
+
+    script = textwrap.dedent(
+        rf'''
+        const path = require('path');
+        const {{ createJiti }} = require('jiti');
+        const jiti = createJiti(path.resolve('runtime-test.js'), {{ interopDefault: false }});
+        const mod = jiti({json.dumps(str(ROOT / "target" / ".pi" / "extensions" / "workflow" / "artifacts.ts"))});
+
+        const workflow = {{
+          id: 'wf-dpaa-descriptor',
+          title: 'DPAA descriptor test',
+          phase: 'plan_review',
+          cwd: process.cwd(),
+          gitRoot: process.cwd(),
+          branch: 'main',
+          createdAt: '2026-06-12T00:00:00.000Z',
+          updatedAt: '2026-06-12T00:00:00.000Z',
+          history: [],
+        }};
+        const receipt = mod.writeDpaaReceipt({{
+          workflow,
+          from: 'plan_review',
+          to: 'implement',
+          planPath: {json.dumps(str(plan))},
+          reportPath: {json.dumps(str(report))},
+          report: {{ level: 'PASS', overall: 0, findings: [] }},
+          exitCode: 0,
+        }});
+        console.log(JSON.stringify({{
+          kind: receipt.reportDescriptor.kind,
+          path: receipt.reportDescriptor.path,
+          component: receipt.reportDescriptor.producer.component,
+          retention: receipt.reportDescriptor.retention,
+          sizeBytes: receipt.reportDescriptor.sizeBytes,
+          sha256: receipt.reportDescriptor.sha256,
+          reportSha256: receipt.reportSha256,
+          summary: receipt.reportDescriptor.summary,
+        }}));
+        '''
+    )
+    data = _run_node(script, tmp_path)
+
+    assert data["kind"] == "dpaa-report"
+    assert Path(data["path"]).resolve() == report.resolve()
+    assert data["component"] == "dpaa"
+    assert data["retention"] == "until-completion"
+    assert data["sizeBytes"] == report.stat().st_size
+    assert data["sha256"] == data["reportSha256"]
+    assert data["summary"] == "DPAA PASS: 0 finding(s), penalty=0."
+
+
+
 def test_runtime_state_does_not_restore_persisted_guard_tokens_as_authority(tmp_path):
     script = textwrap.dedent(
         rf'''

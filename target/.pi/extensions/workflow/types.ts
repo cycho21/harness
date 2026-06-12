@@ -1,3 +1,5 @@
+import type { ArtifactDescriptor } from "./artifact-descriptor";
+
 export type WorkflowPhase =
   | "interview"
   | "plan"
@@ -67,6 +69,7 @@ export type DpaaRunReceipt = {
   overall: number;
   findingsCount: number;
   reportSha256: string;
+  reportDescriptor?: ArtifactDescriptor;
   snapshotVersion?: string;
   snapshotPath?: string;
 };

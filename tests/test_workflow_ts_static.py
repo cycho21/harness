@@ -362,6 +362,16 @@ class TestCompactionAndArtifactContracts:
         assert "createArtifactHandoff" in src
         assert "DEFAULT_INLINE_ARTIFACT_THRESHOLD_BYTES" in src
 
+    def test_dpaa_receipt_records_report_descriptor(self):
+        types_src = _src("types.ts")
+        artifacts_src = _src("artifacts.ts")
+        assert "import type { ArtifactDescriptor }" in types_src
+        assert "reportDescriptor?: ArtifactDescriptor" in types_src
+        assert "describeArtifact" in artifacts_src
+        assert 'kind: "dpaa-report"' in artifacts_src
+        assert 'component: "dpaa"' in artifacts_src
+        assert "Report artifact" in artifacts_src
+
     def test_workflow_docs_record_abort_and_descriptor_contracts(self):
         guide = (ROOT / "target" / ".pi" / "WORKFLOW.md").read_text(encoding="utf-8")
         assert "Abort/cancel semantics" in guide
@@ -462,7 +472,15 @@ class TestCompactionAndArtifactContracts:
         assert "interview wizard kickoff rules" in doc
         assert "high-risk consensus guidance" in doc
         assert "submit_review_package" in doc
+        assert "changed-file/hunk coverage checks" in doc
+        assert "Critical/Major position validation" in doc
         assert "real `git push` completion event" in doc
+
+    def test_status_hints_surface_review_artifact_write_failures(self):
+        src = (EXT_DIR / "application" / "workflow-command-router.ts").read_text(encoding="utf-8")
+        assert "reviewArtifactError" in src
+        assert "review artifact write failed" in src.lower()
+        assert "evidence-verification" in src
 
 
 # ---------------------------------------------------------------------------
@@ -657,6 +675,20 @@ class TestCodeReviewSkillCriticProtocol:
             "(explicit search for missing error handling, tests, edge cases)"
         )
 
+    def test_coverage_pass_present(self):
+        """Changed-file/hunk coverage must be explicit to avoid partial review claims."""
+        src = _skill_src(CODE_REVIEW_SKILL)
+        assert "coverage pass" in src.lower()
+        assert "changed files/hunks" in src.lower()
+        assert "reviewed or explicitly skipped" in src.lower()
+
+    def test_position_validation_present(self):
+        """Critical/Major findings must verify file and line references before reporting."""
+        src = _skill_src(CODE_REVIEW_SKILL)
+        assert "position validation" in src.lower()
+        assert "critical/major" in src.lower()
+        assert "line range" in src.lower()
+
     def test_self_audit_present(self):
         """Self-audit step must be present to filter low-confidence findings."""
         src = _skill_src(CODE_REVIEW_SKILL)
@@ -688,6 +720,12 @@ class TestCodeReviewSkillCriticProtocol:
             "code-review/SKILL.md output format must include '뭐가 빠졌나?' section "
             "(gap analysis results visible to the user)"
         )
+
+    def test_output_format_has_review_scope_confirmation(self):
+        """Output format must expose reviewed/skipped scope to users."""
+        src = _skill_src(CODE_REVIEW_SKILL)
+        assert "리뷰 범위 확인" in src
+        assert "제외한 파일과 사유" in src
 
     def test_output_format_has_review_needed_section(self):
         """Output format must include a low-confidence findings section."""

@@ -366,31 +366,35 @@ def test_workflow_extension_runtime_push_approve_does_not_complete_without_git_p
 
 
 def test_workflow_extension_runtime_clears_active_workflow_after_successful_git_push(tmp_path):
+    project = tmp_path / "clean-project"
+    project.mkdir()
+    subprocess.run(["git", "init"], cwd=project, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     script = textwrap.dedent(
-        r'''
+        rf'''
         const path = require('path');
-        const { createJiti } = require('jiti');
+        const {{ createJiti }} = require('jiti');
         process.chdir('target');
 
-        const pi = { events: {}, commands: {}, tools: {}, on(name, fn) { this.events[name] = fn; }, registerCommand(name, spec) { this.commands[name] = spec; }, registerTool(spec) { this.tools[spec.name] = spec; } };
-        const jiti = createJiti(path.resolve('runtime-test.js'), { interopDefault: false });
+        const pi = {{ events: {{}}, commands: {{}}, tools: {{}}, on(name, fn) {{ this.events[name] = fn; }}, registerCommand(name, spec) {{ this.commands[name] = spec; }}, registerTool(spec) {{ this.tools[spec.name] = spec; }} }};
+        const jiti = createJiti(path.resolve('runtime-test.js'), {{ interopDefault: false }});
         jiti(path.resolve('.pi/extensions/workflow.ts')).default(pi);
+        process.chdir({json.dumps(str(project))});
 
         const notifications = [];
-        const ctx = { hasUI: true, ui: { notify: (text, level) => notifications.push({ text, level }), confirm: async () => true } };
+        const ctx = {{ hasUI: true, ui: {{ notify: (text, level) => notifications.push({{ text, level }}), confirm: async () => true }} }};
 
-        (async () => {
+        (async () => {{
           await pi.commands.workflow.handler('start Runtime done cleanup', ctx);
           await pi.commands.workflow.handler('state commit', ctx);
           await pi.commands.workflow.handler('approve', ctx);
-          await pi.events.tool_result({ toolName: 'bash', input: { command: 'git push origin HEAD' }, isError: false, content: [], details: {} }, ctx);
+          await pi.events.tool_result({{ toolName: 'bash', input: {{ command: 'git push origin HEAD' }}, isError: false, content: [], details: {{}} }}, ctx);
           await pi.commands.workflow.handler('status', ctx);
-          const prompt = await pi.events.before_agent_start({ systemPrompt: 'base' });
-          console.log(JSON.stringify({
+          const prompt = await pi.events.before_agent_start({{ systemPrompt: 'base' }});
+          console.log(JSON.stringify({{
             notifications: notifications.map((item) => item.text),
             prompt: prompt.systemPrompt,
-          }));
-        })().catch((error) => { console.error(error.stack || String(error)); process.exit(1); });
+          }}));
+        }})().catch((error) => {{ console.error(error.stack || String(error)); process.exit(1); }});
         '''
     )
     data = _run_node_runtime(script, tmp_path)
@@ -1393,63 +1397,67 @@ def test_workflow_state_autoback_does_not_send_followup_steer_message(tmp_path):
 
 def test_commit_to_push_blocked_when_uncommitted_changes_exist(tmp_path):
     """Bug fix: workflow_approve in commit phase must block if there are uncommitted changes."""
+    project = tmp_path / "dirty-project"
+    project.mkdir()
+    subprocess.run(["git", "init"], cwd=project, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    tracked = project / "tracked.txt"
+    tracked.write_text("staged but not committed\n", encoding="utf-8")
+    subprocess.run(["git", "add", "tracked.txt"], cwd=project, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
     script = textwrap.dedent(
-        r'''
+        rf'''
         const path = require('path');
-        const { createJiti } = require('jiti');
+        const {{ createJiti }} = require('jiti');
         process.chdir('target');
 
         const notifications = [];
-        const pi = {
-          events: {}, commands: {}, tools: {},
-          on(name, fn) { this.events[name] = fn; },
-          registerCommand(name, spec) { this.commands[name] = spec; },
-          registerTool(spec) { this.tools[spec.name] = spec; },
-          sendUserMessage() {},
-          getAllTools() { return [
-            { name: 'read', sourceInfo: { source: 'builtin' } },
-            { name: 'write', sourceInfo: { source: 'builtin' } },
-            { name: 'edit', sourceInfo: { source: 'builtin' } },
-            { name: 'bash', sourceInfo: { source: 'builtin' } },
-            ...Object.keys(this.tools).map((name) => ({ name, sourceInfo: { source: 'extension' } })),
-          ]; },
-          setActiveTools(names) { this.activeTools = names; },
-        };
-        const jiti = createJiti(path.resolve('runtime-test.js'), { interopDefault: false });
+        const pi = {{
+          events: {{}}, commands: {{}}, tools: {{}},
+          on(name, fn) {{ this.events[name] = fn; }},
+          registerCommand(name, spec) {{ this.commands[name] = spec; }},
+          registerTool(spec) {{ this.tools[spec.name] = spec; }},
+          sendUserMessage() {{}},
+          getAllTools() {{ return [
+            {{ name: 'read', sourceInfo: {{ source: 'builtin' }} }},
+            {{ name: 'write', sourceInfo: {{ source: 'builtin' }} }},
+            {{ name: 'edit', sourceInfo: {{ source: 'builtin' }} }},
+            {{ name: 'bash', sourceInfo: {{ source: 'builtin' }} }},
+            ...Object.keys(this.tools).map((name) => ({{ name, sourceInfo: {{ source: 'extension' }} }})),
+          ]; }},
+          setActiveTools(names) {{ this.activeTools = names; }},
+        }};
+        const jiti = createJiti(path.resolve('runtime-test.js'), {{ interopDefault: false }});
         jiti(path.resolve('.pi/extensions/workflow.ts')).default(pi);
+        process.chdir({json.dumps(str(project))});
 
-        const ctx = { hasUI: true, hasPendingMessages: () => false, isIdle: () => false,
-          ui: {
-            notify(msg) { notifications.push(msg); },
+        const ctx = {{ hasUI: true, hasPendingMessages: () => false, isIdle: () => false,
+          ui: {{
+            notify(msg) {{ notifications.push(msg); }},
             confirm: async () => true,
             select: async (_m, opts) => opts[0],
-            setStatus: () => {},
-            setWidget: () => {},
-          }
-        };
+            setStatus: () => {{}},
+            setWidget: () => {{}},
+          }}
+        }};
 
-        (async () => {
-          // Advance to commit phase
+        (async () => {{
           await pi.commands.workflow.handler('start uncommitted test', ctx);
           await pi.commands.workflow.handler('approve', ctx);
           await pi.commands.workflow.handler('state code_review', ctx);
           await pi.commands.workflow.handler('state commit', ctx);
-          // Try to approve commit→push without having committed anything
-          // git status in the test repo should show uncommitted changes (we're in target/)
-          const result = await pi.tools.workflow_approve.execute('wa-1', { summary: 'push without committing' }, undefined, undefined, ctx);
-          const phase = 'commit'; // should remain in commit
-          console.log(JSON.stringify({ resultOk: result.details?.ok, notifications, phase }));
-        })().catch((e) => { console.error(e.stack || String(e)); process.exit(1); });
+          const result = await pi.tools.workflow_approve.execute('wa-1', {{ summary: 'push without committing' }}, undefined, undefined, ctx);
+          await pi.commands.workflow.handler('status', ctx);
+          const statusText = notifications[notifications.length - 1] ?? '';
+          console.log(JSON.stringify({{ resultOk: result.details?.ok, resultReason: result.details?.reason, notifications, statusText }}));
+        }})().catch((e) => {{ console.error(e.stack || String(e)); process.exit(1); }});
         '''
     )
     data = _run_node_runtime(script, tmp_path)
 
-    # The approve should be blocked (or a warning issued) when uncommitted changes exist
-    blocked_or_warned = (
-        data["resultOk"] is False
-        or any("uncommitted" in n.lower() or "커밋" in n for n in data["notifications"])
+    assert data["resultOk"] is False, (
+        "commit→push workflow_approve must block when tracked staged/modified changes exist. "
+        f"Got resultOk={data['resultOk']}, reason={data['resultReason']}, notifications={data['notifications']}"
     )
-    assert blocked_or_warned, (
-        "commit→push workflow_approve must block or warn when uncommitted changes exist. "
-        f"Got resultOk={data['resultOk']}, notifications={data['notifications']}"
-    )
+    assert data["resultReason"] == "policy-declined"
+    assert any("uncommitted" in n.lower() or "커밋" in n for n in data["notifications"]), data["notifications"]
+    assert "Current phase: commit" in data["statusText"], data["statusText"]

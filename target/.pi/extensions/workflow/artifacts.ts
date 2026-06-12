@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ArtifactSnapshot, DpaaReport, DpaaRunReceipt, WorkflowInstance, WorkflowPhase } from "./types";
+import { describeArtifact } from "./artifact-descriptor";
 import { getDpaaReceiptDir, sha256File, slugify } from "./storage";
 import { banner, table } from "./ui";
 
@@ -174,6 +175,13 @@ export function writeDpaaReceipt(args: {
     overall: args.report.overall,
     findingsCount: args.report.findings.length,
     reportSha256: sha256File(args.reportPath),
+    reportDescriptor: describeArtifact({
+      kind: "dpaa-report",
+      filePath: args.reportPath,
+      producer: { system: "harness", component: "dpaa" },
+      retention: "until-completion",
+      summary: `DPAA ${args.report.level}: ${args.report.findings.length} finding(s), penalty=${args.report.overall}.`,
+    }),
     snapshotVersion: args.snapshot?.version,
     snapshotPath: args.snapshot?.path,
   };
@@ -206,6 +214,7 @@ export function formatLatestDpaaAudit(): string {
       ["Plan", path.relative(process.cwd(), receipt.planPath)],
       ["Plan hash", receipt.planSha256],
       ["Report hash", receipt.reportSha256],
+      ["Report artifact", receipt.reportDescriptor ? path.relative(process.cwd(), receipt.reportDescriptor.path) : "없음"],
       ["Snapshot", receipt.snapshotVersion ?? "없음"],
     ]),
   ].join("\n");

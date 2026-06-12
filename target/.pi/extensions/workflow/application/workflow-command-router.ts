@@ -96,6 +96,10 @@ function formatConditionalProtocolHints(state: WorkflowRuntimeState): string {
     hints.push("- no recent verification evidence → use evidence-verification before committing.");
   }
 
+  if (state.reviewPackageToken?.reviewArtifactError) {
+    hints.push("- review artifact write failed → use evidence-verification to cite the guard token and preserve review evidence before commit.");
+  }
+
   if (workflow.history.length >= 8) {
     hints.push("- long workflow history → use compact-handoff before manual context compaction.");
   }

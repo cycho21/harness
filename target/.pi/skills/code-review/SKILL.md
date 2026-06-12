@@ -39,16 +39,21 @@ Follow this workflow for every code review request:
    - For Java/Spring Boot: read `references/java-checklist.md` before analysis — without it, you'll flag Jackson/JPA fields as "unused" and miss ADR-0001 violations specific to this codebase
 5. **Pre-commitment**: Based on the change type (e.g., auth, DB, async, API) and domain, predict 3–5 most likely problem areas *before* reading the code. Record them explicitly. Verify or refute each prediction during analysis — comparing predictions to findings reveals blind spots.
 6. **Read the code**: Use appropriate tools to read file contents
-7. **Analyze by dimension**: Apply the five-dimension framework above, using language-specific checklists
-8. **Gap analysis**: Explicitly look for what is *missing*, not just what is wrong. Ask: what error paths are unhandled? What edge cases have no tests? What assumptions are unstated? What would fail silently?
-9. **Self-audit + Realist Check**: For each Critical/Major finding: (a) rate confidence HIGH/MEDIUM/LOW — move LOW-confidence findings to "검토 필요"; (b) pressure-test severity — what is the realistic worst case, what mitigating factors exist? Downgrade with explicit 완화 근거 if warranted. If Critical ≥ 1 survives, activate ADVERSARIAL mode (see Review Rules).
-10. **Generate report**: Provide prioritized findings with clear explanations
+7. **Coverage pass**: Build a short checklist of changed files/hunks before judging quality. Confirm each changed file was either reviewed or explicitly skipped with a reason.
+8. **Analyze by dimension**: Apply the five-dimension framework above, using language-specific checklists
+9. **Position validation**: For every Critical/Major finding, verify the reported file and line range still point to the relevant changed code. If exact positioning is uncertain, include the nearest stable symbol/function instead of pretending precision.
+10. **Gap analysis**: Explicitly look for what is *missing*, not just what is wrong. Ask: what error paths are unhandled? What edge cases have no tests? What assumptions are unstated? What would fail silently?
+11. **Self-audit + Realist Check**: For each Critical/Major finding: (a) rate confidence HIGH/MEDIUM/LOW — move LOW-confidence findings to "검토 필요"; (b) pressure-test severity — what is the realistic worst case, what mitigating factors exist? Downgrade with explicit 완화 근거 if warranted. If Critical ≥ 1 survives, activate ADVERSARIAL mode (see Review Rules).
+12. **Generate report**: Provide prioritized findings with clear explanations
 
 ## Diff-Aware Review
 
 - **Focus on changed lines**, not pre-existing code
 - Only flag pre-existing issues if they interact with the changed code
 - Never suggest "while you're here" improvements to adjacent code
+- Track reviewed files/hunks so large diffs do not accidentally receive partial review while being reported as complete
+- Group related changed files when reviewing cross-file behavior (for example, DTO + mapper + service, or paired locale/config files)
+- Treat line numbers as evidence to verify, not as a guess: re-open the file around each finding before reporting Critical/Major issues
 - This aligns with the project's "Surgical Changes" principle (AGENTS.md)
 
 ## Review Scope
@@ -129,6 +134,7 @@ For focused or in-depth reviews, load additional perspective-specific checklists
 # 코드 리뷰 결과
 
 **리뷰 대상**: [파일 목록]
+**리뷰 범위 확인**: [검토한 변경 파일/제외한 파일과 사유]
 **언어**: [Java/Go]
 **판정**: ✅ 커밋 가능 | ⚠️ 수정 필요 | 🔴 대폭 수정 필요
 
@@ -184,7 +190,9 @@ User: "Check if this code is ready to commit"
 5. **No approval with Critical** — don't approve code that has Critical issues
 6. **Uncertainty → say so** — if uncertain, flag it and suggest investigation rather than guessing; "I'm not sure if X is intentional" is more useful than a wrong confident statement
 7. **Diff-aware** — focus on changed lines; never flag pre-existing code unless it directly interacts with the change
-8. **ADVERSARIAL escalation** — if Critical ≥ 1 survives the Realist Check, expand search to related functions and direct callers in the same file; note "ADVERSARIAL mode" in the review header
+8. **Coverage accountability** — do not imply full review if some changed files/hunks were skipped; list skipped items with reasons
+9. **Position accuracy** — verify Critical/Major file:line references against the current file before reporting
+10. **ADVERSARIAL escalation** — if Critical ≥ 1 survives the Realist Check, expand search to related functions and direct callers in the same file; note "ADVERSARIAL mode" in the review header
 
 ## Workflow Integration
 

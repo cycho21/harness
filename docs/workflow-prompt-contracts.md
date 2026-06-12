@@ -13,7 +13,7 @@ Add or update tests when changing text that controls:
 - phase transition instructions in `[LLM WORKFLOW ACTION]`
 - interview wizard kickoff rules
 - plan review repair and high-risk consensus guidance
-- code review package requirements
+- code review package requirements, changed-scope coverage, and finding position validation
 - documentation/verification/field-log reminders
 - accepted-risk skip wording
 - workspace mismatch and policy scan recovery instructions
@@ -37,6 +37,7 @@ Avoid brittle full-string snapshots unless exact formatting is the behavior bein
 - `/workflow trace` must request hypotheses, evidence for/against, rebuttal, critical unknown, and discriminating probe.
 - `plan_review` high-risk guidance must mention Architect/Critic consensus review.
 - `code_review` must require `submit_review_package` and independent review before approval.
+- `code_review` skill text must preserve changed-file/hunk coverage checks and Critical/Major position validation.
 - `push` must require policy scan approval and a real `git push` completion event.
 - `compact-handoff` must say it does not invoke native compaction itself.
 

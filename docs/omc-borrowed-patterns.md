@@ -26,7 +26,7 @@ https://github.com/yeachan-heo/oh-my-claudecode
 | Verify before claim | Merged into `evidence-verification` so completion claims and workflow regressions share one evidence protocol | `target/.pi/skills/evidence-verification/SKILL.md` |
 | AI slop cleanup | `cleanup` skill for behavior-preserving cleanup passes | `target/.pi/skills/cleanup/SKILL.md` |
 | High-risk plan critique | Architect/Critic consensus guidance for high-risk/strict/API/security/migration/data/deploy plans | `target/.pi/WORKFLOW.md`, `target/.pi/extensions/workflow/application/continuation.ts`, `target/.pi/skills/planning-and-task-breakdown/references/plan-template.md` |
-| Critic 7-step review protocol | Pre-commitment predictions, gap analysis (what’s missing), self-audit (LOW-confidence findings → 검토 필요), realist check (severity pressure-test), ADVERSARIAL escalation (Critical ≥1 → expand scope) added to code-review skill; FRAGILE assumption rating and pre-mortem added to plan_review high-risk path; DPAA (linguistic clarity) and Critic (logical soundness) kept as independent layers | `target/.pi/skills/code-review/SKILL.md`, `target/.pi/WORKFLOW.md`, `target/.pi/skills/planning-and-task-breakdown/references/plan-template.md` |
+| Critic 7-step review protocol | Pre-commitment predictions, changed-file/hunk coverage checks, Critical/Major position validation, gap analysis (what’s missing), self-audit (LOW-confidence findings → 검토 필요), realist check (severity pressure-test), ADVERSARIAL escalation (Critical ≥1 → expand scope) added to code-review skill; FRAGILE assumption rating and pre-mortem added to plan_review high-risk path; DPAA (linguistic clarity) and Critic (logical soundness) kept as independent layers | `target/.pi/skills/code-review/SKILL.md`, `target/.pi/WORKFLOW.md`, `target/.pi/skills/planning-and-task-breakdown/references/plan-template.md` |
 | Manual compact handoff | `compact-handoff` skill; prepares resume note but does not invoke native compaction | `target/.pi/skills/compact-handoff/SKILL.md` |
 | Artifact descriptor handoff | Standard descriptor contract for large handoffs with kind/path/producer/retention/size/hash/summary | `target/.pi/extensions/workflow/artifact-descriptor.ts` |
 | Tool failure recovery | Merged into `continuation-safety`; retryability classes and harness-specific recovery patterns | `target/.pi/skills/continuation-safety/SKILL.md` |
@@ -43,11 +43,11 @@ https://github.com/yeachan-heo/oh-my-claudecode
 |-------------|-----------------------|-----------------------|
 | Subagent tracker / async ownership | Guidance exists in `continuation-safety`; reviewer subagent timeout is raised in `target/.pi/settings.json`; no mechanical runtime tracker yet | Extend workflow status/review gates if mechanizing. Do not add another pending-work skill. |
 | Stop/idle hook blocking | Some continuation/reminder behavior exists; pending async ownership is not mechanically blocked | Add runtime checks only if real dogfood shows missed pending work. |
-| Artifact descriptor integration | Descriptor helpers exist and large `submit_review_package` payloads are written as review descriptors referenced from guard/audit tokens; trace/verification/DPAA outputs are not yet automatically stored as descriptors | Continue wiring existing `artifact-descriptor.ts` into outputs instead of defining a second descriptor format. |
+| Artifact descriptor integration | Descriptor helpers exist; large `submit_review_package` payloads are written as review descriptors, DPAA receipts now include `dpaa-report` descriptors, and trace/verification outputs are still skill-level reports rather than automatic artifacts | Continue wiring existing `artifact-descriptor.ts` into outputs instead of defining a second descriptor format. |
 | Dogfood/runtime fixture benchmarks | Runtime fixture tests now cover interview wizard topology/clarity wrapping, `/workflow trace` routing, and high-risk plan-review continuation prompts; full manual dogfood is still pending | Extend existing workflow runtime tests for new behavior, using `evidence-verification` for evidence. |
 | Phase protection levels | Documented only; not a hard gate taxonomy | Mechanize only where a concrete phase safety bug appears. |
 | Compact lifecycle | `compact-handoff` exists; no automatic resume validation | Extend `compact-handoff`, do not add a separate resume skill. |
-| Status/HUD surfacing | `/workflow status` now shows conditional protocol hints only when runtime triggers exist, such as missing commit verification evidence; no always-on checklist is added | Add more status hints only for concrete triggers; avoid making conditional protocols look mandatory. |
+| Status/HUD surfacing | `/workflow status` now shows conditional protocol hints only when runtime triggers exist, such as missing commit verification evidence or review artifact write failure; no always-on checklist is added | Add more status hints only for concrete triggers; avoid making conditional protocols look mandatory. |
 | Bridge routing/fallback | Runtime fixture tests now cover trace observation-missing fallback, sendUserMessage-unavailable fallback, and unknown-command status fallback; a full OMC-style routing matrix is not adopted | Prefer targeted command-router fixture tests over new protocol docs. |
 | Security/review hardening | Some path/policy/worktree rules exist | Add focused tests/rules for concrete protected-path or policy failures. |
 
@@ -75,7 +75,7 @@ https://github.com/yeachan-heo/oh-my-claudecode
 
 If future work continues OMC borrowing, prioritize:
 
-1. Wiring `artifact-descriptor.ts` into trace/verification/DPAA outputs beyond review packages.
+1. Wiring `artifact-descriptor.ts` into trace/verification outputs beyond review packages and DPAA receipts.
 2. Additional status surfacing only for concrete pending-work/last-failure triggers, without making protocols mandatory.
 3. Additional command-router fallback tests only when a new route or capability fallback is added.
 4. Additional manual dogfood transcripts for full `/workflow start` UX.

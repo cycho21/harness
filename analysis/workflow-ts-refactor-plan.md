@@ -77,11 +77,11 @@
 
 ### Task 4 — policy/backstop/extension mutation approval 분리
 
-**설명:** phase tool policy 적용, write path backstop, mutating bash 판정, `target/.pi/extensions/**` mutation approval 검사와 reason formatting을 별도 모듈로 이동한다.
+**설명:** phase tool policy 적용, write path backstop, mutating bash 판정, 설치된 runtime `.pi/extensions/**` mutation approval 검사와 reason formatting을 별도 모듈로 이동한다. 이 harness source repo의 `target/.pi/extensions/**`는 일반 개발 대상이다.
 
 **수용 기준:**
 - read-only phase에서 write/edit/bash backstop이 유지된다.
-- `target/.pi/extensions/**` 변경 승인 요구가 유지된다.
+- 설치된 runtime `.pi/extensions/**` 변경 승인 요구가 유지된다.
 - runtime extension path 오탐/정탐 규칙이 기존과 동일하다.
 
 **검증:**
