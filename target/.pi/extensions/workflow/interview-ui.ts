@@ -139,41 +139,47 @@ class InterviewWizard {
         this.skipCurrent();
         return;
       }
-      if (matchesKey(data, Key.up)) {
-        this.choiceCursor = Math.max(0, this.choiceCursor - 1);
-        this.requestRender();
-        return;
-      }
-      if (matchesKey(data, Key.down)) {
-        const choices = this.currentQuestion().choices;
-        this.choiceCursor = Math.min(Math.max(0, choices.length - 1), this.choiceCursor + 1);
-        this.requestRender();
-        return;
-      }
       if (matchesKey(data, Key.space)) {
         this.toggleChoice();
         return;
       }
     }
 
+    // Arrow key navigation works regardless of focus state
+    if (matchesKey(data, Key.up)) {
+      this.choiceCursor = Math.max(0, this.choiceCursor - 1);
+      this.requestRender();
+      return;
+    }
+    if (matchesKey(data, Key.down)) {
+      const choices = this.currentQuestion().choices;
+      this.choiceCursor = Math.min(Math.max(0, choices.length - 1), this.choiceCursor + 1);
+      this.requestRender();
+      return;
+    }
+
     if (matchesKey(data, Key.enter)) {
       this.moveNext();
       return;
     }
-    if (matchesKey(data, Key.backspace) || data === "") {
-      const answer = this.currentAnswer();
-      answer.freeText = Array.from(answer.freeText).slice(0, -1).join("");
-      answer.skipped = false;
-      this.error = "";
-      this.requestRender();
-      return;
-    }
-    if (isPrintable(data)) {
-      const answer = this.currentAnswer();
-      answer.freeText += data;
-      answer.skipped = false;
-      this.error = "";
-      this.requestRender();
+
+    // Text editing only allowed when focus is on the text input field
+    if (this.focus === "text") {
+      if (matchesKey(data, Key.backspace) || data === "") {
+        const answer = this.currentAnswer();
+        answer.freeText = Array.from(answer.freeText).slice(0, -1).join("");
+        answer.skipped = false;
+        this.error = "";
+        this.requestRender();
+        return;
+      }
+      if (isPrintable(data)) {
+        const answer = this.currentAnswer();
+        answer.freeText += data;
+        answer.skipped = false;
+        this.error = "";
+        this.requestRender();
+      }
     }
   }
 
