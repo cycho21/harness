@@ -53,8 +53,9 @@ export async function launchInterviewWizard(ctx: WizardContext, workflowTitle: s
   try {
     return await ctx.ui.custom<InterviewWizardResult | null>((tui, theme, _keybindings, done) => {
       return new InterviewWizard(tui, theme, workflowTitle, questions, answers, (nextIndex) => {
+        // Only update the external progress widget. Do NOT call tui.requestRender here;
+        // InterviewWizard.requestRender() calls it after updating all internal state.
         currentIndex = nextIndex;
-        tui.requestRender?.();
       }, done);
     });
   } finally {
@@ -217,8 +218,7 @@ class InterviewWizard {
     this.index = Math.max(0, this.index - 1);
     this.choiceCursor = 0;
     this.error = "";
-    this.onStateChange(this.index);
-    this.requestRender();
+    this.requestRender(); // requestRender() calls onStateChange internally
   }
 
   private moveNext(): void {
@@ -236,8 +236,7 @@ class InterviewWizard {
     this.index += 1;
     this.choiceCursor = 0;
     this.error = "";
-    this.onStateChange(this.index);
-    this.requestRender();
+    this.requestRender(); // requestRender() calls onStateChange internally
   }
 
   private skipCurrent(): void {
