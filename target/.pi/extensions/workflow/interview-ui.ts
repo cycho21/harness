@@ -1,4 +1,4 @@
-import { Box, Text, truncateToWidth, matchesKey, Key } from "@earendil-works/pi-tui";
+import { Box, Text, truncateToWidth, matchesKey, Key, decodeKittyPrintable } from "@earendil-works/pi-tui";
 
 export type InterviewQuestion = {
   id: string;
@@ -97,7 +97,11 @@ class InterviewWizard {
   invalidate(): void {}
 
   handleInput(data: string): void {
-    if (matchesKey(data, Key.ctrl("c")) || matchesKey(data, Key.escape) && !this.preview) {
+    // Decode character for both plain input and Kitty keyboard protocol (CSI-u sequences).
+    // e.g. plain 'p' → 'p', Kitty-encoded 'p' (\x1b[112u) → 'p', arrow key → undefined.
+    const ch = decodeKittyPrintable(data) ?? (isPrintable(data) ? data : undefined);
+
+    if (matchesKey(data, Key.ctrl("c")) || (matchesKey(data, Key.escape) && !this.preview)) {
       this.done(null);
       return;
     }
@@ -107,7 +111,7 @@ class InterviewWizard {
         this.done({ completed: true, summaryMarkdown: buildAnswerSummary(this.answers, this.questions), answers: cloneAnswers(this.answers) });
         return;
       }
-      if (matchesKey(data, Key.escape) || data.toLowerCase() === "v") {
+      if (matchesKey(data, Key.escape) || ch?.toLowerCase() === "v") {
         this.preview = false;
         this.finalPreview = false;
         this.requestRender();
@@ -122,20 +126,20 @@ class InterviewWizard {
     }
 
     if (this.focus === "choices") {
-      if (data.toLowerCase() === "v") {
+      if (ch?.toLowerCase() === "v") {
         this.preview = true;
         this.requestRender();
         return;
       }
-      if (data.toLowerCase() === "p") {
+      if (ch?.toLowerCase() === "p") {
         this.movePrevious();
         return;
       }
-      if (data.toLowerCase() === "n" || matchesKey(data, Key.enter)) {
+      if (ch?.toLowerCase() === "n" || matchesKey(data, Key.enter)) {
         this.moveNext();
         return;
       }
-      if (data.toLowerCase() === "s") {
+      if (ch?.toLowerCase() === "s") {
         this.skipCurrent();
         return;
       }
@@ -163,7 +167,8 @@ class InterviewWizard {
       return;
     }
 
-    // Text editing only allowed when focus is on the text input field
+    // Text editing only allowed when focus is on the text input field.
+    // ch handles both plain chars and Kitty protocol CSI-u encoded chars.
     if (this.focus === "text") {
       if (matchesKey(data, Key.backspace) || data === "") {
         const answer = this.currentAnswer();
@@ -173,9 +178,9 @@ class InterviewWizard {
         this.requestRender();
         return;
       }
-      if (isPrintable(data)) {
+      if (ch !== undefined) {
         const answer = this.currentAnswer();
-        answer.freeText += data;
+        answer.freeText += ch;
         answer.skipped = false;
         this.error = "";
         this.requestRender();
