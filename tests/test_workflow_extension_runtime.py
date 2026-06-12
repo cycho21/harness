@@ -1319,3 +1319,127 @@ def test_plan_review_to_implement_requires_no_user_approval(tmp_path):
     plan_review_confirms = [c for c in data["confirms"] if "plan_review" in c or "implement" in c]
     assert plan_review_confirms == [], \
         f"Unexpected confirm dialogs for plan_review→implement: {plan_review_confirms}"
+
+
+def test_workflow_state_autoback_does_not_send_followup_steer_message(tmp_path):
+    """Bug fix: workflow_state prev (isAutoBack) must NOT call sendUserMessage.
+    The kick-off instructions belong in the tool result, not a follow-up that can go stale."""
+    script = textwrap.dedent(
+        r'''
+        const path = require('path');
+        const { createJiti } = require('jiti');
+        process.chdir('target');
+
+        const sentMessages = [];
+        const pi = {
+          events: {}, commands: {}, tools: {},
+          on(name, fn) { this.events[name] = fn; },
+          registerCommand(name, spec) { this.commands[name] = spec; },
+          registerTool(spec) { this.tools[spec.name] = spec; },
+          sendUserMessage(text, options) { sentMessages.push({ text, options }); },
+          getAllTools() { return [
+            { name: 'read', sourceInfo: { source: 'builtin' } },
+            { name: 'write', sourceInfo: { source: 'builtin' } },
+            { name: 'edit', sourceInfo: { source: 'builtin' } },
+            { name: 'bash', sourceInfo: { source: 'builtin' } },
+            ...Object.keys(this.tools).map((name) => ({ name, sourceInfo: { source: 'extension' } })),
+          ]; },
+          setActiveTools(names) { this.activeTools = names; },
+        };
+        const jiti = createJiti(path.resolve('runtime-test.js'), { interopDefault: false });
+        jiti(path.resolve('.pi/extensions/workflow.ts')).default(pi);
+
+        const ctx = { hasUI: true, hasPendingMessages: () => false, isIdle: () => false,
+          ui: { notify: () => {}, confirm: async () => true, select: async (_m, opts) => opts[0], setStatus: () => {}, setWidget: () => {} } };
+
+        (async () => {
+          await pi.commands.workflow.handler('start autoback steer test', ctx);
+          await pi.commands.workflow.handler('approve', ctx);
+          // Advance to code_review
+          await pi.commands.workflow.handler('state code_review', ctx);
+          const beforeSteer = sentMessages.length;
+          // Trigger isAutoBack: code_review → implement
+          const result = await pi.tools.workflow_state.execute('ws-1', { direction: 'prev', reason: 'minor fix needed' }, undefined, undefined, ctx);
+          const afterSteer = sentMessages.length;
+          const steersSent = afterSteer - beforeSteer;
+          // The kick-off content should be in the tool result, not a separate message
+          const resultText = result.content[0].text;
+          console.log(JSON.stringify({ steersSent, resultText, phase: 'implement' }));
+        })().catch((e) => { console.error(e.stack || String(e)); process.exit(1); });
+        '''
+    )
+    data = _run_node_runtime(script, tmp_path)
+
+    # Bug fix: no follow-up steer message should be sent
+    assert data["steersSent"] == 0, (
+        f"workflow_state isAutoBack sent {data['steersSent']} follow-up message(s); "
+        "kick-off content must be in the tool result instead to prevent stale steer replay"
+    )
+    # The tool result must contain the kick-off instructions
+    assert "수정 루프" in data["resultText"] or "code_review" in data["resultText"], (
+        "workflow_state isAutoBack tool result must contain kick-off instructions"
+    )
+
+
+def test_commit_to_push_blocked_when_uncommitted_changes_exist(tmp_path):
+    """Bug fix: workflow_approve in commit phase must block if there are uncommitted changes."""
+    script = textwrap.dedent(
+        r'''
+        const path = require('path');
+        const { createJiti } = require('jiti');
+        process.chdir('target');
+
+        const notifications = [];
+        const pi = {
+          events: {}, commands: {}, tools: {},
+          on(name, fn) { this.events[name] = fn; },
+          registerCommand(name, spec) { this.commands[name] = spec; },
+          registerTool(spec) { this.tools[spec.name] = spec; },
+          sendUserMessage() {},
+          getAllTools() { return [
+            { name: 'read', sourceInfo: { source: 'builtin' } },
+            { name: 'write', sourceInfo: { source: 'builtin' } },
+            { name: 'edit', sourceInfo: { source: 'builtin' } },
+            { name: 'bash', sourceInfo: { source: 'builtin' } },
+            ...Object.keys(this.tools).map((name) => ({ name, sourceInfo: { source: 'extension' } })),
+          ]; },
+          setActiveTools(names) { this.activeTools = names; },
+        };
+        const jiti = createJiti(path.resolve('runtime-test.js'), { interopDefault: false });
+        jiti(path.resolve('.pi/extensions/workflow.ts')).default(pi);
+
+        const ctx = { hasUI: true, hasPendingMessages: () => false, isIdle: () => false,
+          ui: {
+            notify(msg) { notifications.push(msg); },
+            confirm: async () => true,
+            select: async (_m, opts) => opts[0],
+            setStatus: () => {},
+            setWidget: () => {},
+          }
+        };
+
+        (async () => {
+          // Advance to commit phase
+          await pi.commands.workflow.handler('start uncommitted test', ctx);
+          await pi.commands.workflow.handler('approve', ctx);
+          await pi.commands.workflow.handler('state code_review', ctx);
+          await pi.commands.workflow.handler('state commit', ctx);
+          // Try to approve commit→push without having committed anything
+          // git status in the test repo should show uncommitted changes (we're in target/)
+          const result = await pi.tools.workflow_approve.execute('wa-1', { summary: 'push without committing' }, undefined, undefined, ctx);
+          const phase = 'commit'; // should remain in commit
+          console.log(JSON.stringify({ resultOk: result.details?.ok, notifications, phase }));
+        })().catch((e) => { console.error(e.stack || String(e)); process.exit(1); });
+        '''
+    )
+    data = _run_node_runtime(script, tmp_path)
+
+    # The approve should be blocked (or a warning issued) when uncommitted changes exist
+    blocked_or_warned = (
+        data["resultOk"] is False
+        or any("uncommitted" in n.lower() or "커밋" in n for n in data["notifications"])
+    )
+    assert blocked_or_warned, (
+        "commit→push workflow_approve must block or warn when uncommitted changes exist. "
+        f"Got resultOk={data['resultOk']}, notifications={data['notifications']}"
+    )

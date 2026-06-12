@@ -603,6 +603,41 @@ class TestGateMessageLanguage:
 # code-review/SKILL.md — Critic 7-step protocol contract tests
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# workflow.ts — workflow_state autoback and commit→push guard contracts
+# ---------------------------------------------------------------------------
+
+class TestWorkflowStateAndPushGuardContracts:
+    """Guard that Bug 1 and Bug 2 fixes remain in place."""
+
+    def test_autoback_does_not_call_steer_llm(self):
+        """Bug 2 fix: workflow_state isAutoBack must NOT call steerLlm (sendUserMessage).
+        The kick-off instructions must be returned in the tool result content."""
+        src = _workflow_src()
+        # The steerLlm call must not exist inside the isAutoBack block.
+        # We verify by checking the kick-off is built as 'kickOff' const (not a void call).
+        assert "const kickOff = isAutoBack" in src, (
+            "workflow.ts must build kick-off as 'const kickOff = isAutoBack ...' "
+            "(returned in tool result, not sent via steerLlm)"
+        )
+        # steerLlm(kickOff, ...) must NOT appear — only kickOff in content is allowed
+        assert "steerLlm(kickOff" not in src, (
+            "workflow.ts must not call steerLlm(kickOff, ...) "
+            "— stale follow-up steers bypass onUserPrompt stale-marker check"
+        )
+
+    def test_push_guard_checks_uncommitted_changes(self):
+        """Bug 1 fix: confirmPushPolicyForPushPhase must check for uncommitted changes."""
+        src = _workflow_src()
+        assert "git status --porcelain" in src, (
+            "workflow.ts confirmPushPolicyForPushPhase must run 'git status --porcelain' "
+            "to block push when uncommitted changes exist"
+        )
+        assert "uncommitted changes exist" in src.lower() or "Push blocked" in src, (
+            "workflow.ts must emit a clear message when uncommitted changes block push"
+        )
+
+
 class TestCodeReviewSkillCriticProtocol:
     """Guard that the Critic protocol keywords remain present in the code-review skill."""
 

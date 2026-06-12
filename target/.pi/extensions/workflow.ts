@@ -355,6 +355,30 @@ export default function (pi: ExtensionAPI) {
   }
 
   async function confirmPushPolicyForPushPhase(ctx: any): Promise<boolean> {
+    // Guard: block push if there are uncommitted changes.
+    // This prevents the LLM from being confused by stale steers into skipping the commit step.
+    try {
+      const gitRoot = getGitRoot();
+      if (gitRoot) {
+        const { execSync } = require("node:child_process");
+        const allLines = execSync("git status --porcelain", { cwd: gitRoot, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
+        // Only block for staged or modified tracked files; untracked files (??) are not pushed.
+        const dirty = allLines.split("\n").filter((l) => l.length >= 2 && l.slice(0, 2) !== "??").join("\n").trim();
+        if (dirty) {
+          ctx.ui.notify(
+            [
+              "Push blocked: uncommitted changes exist.",
+              "Run git add + git commit before pushing.",
+              "",
+              dirty.split("\n").slice(0, 5).join("\n"),
+            ].join("\n"),
+            "warning",
+          );
+          return false;
+        }
+      }
+    } catch { /* git unavailable or not a repo — skip the check */ }
+
     const policySkip = consumeSkipToken("policy-scan");
     if (policySkip) {
       const scan = scanPushPolicy();
@@ -799,34 +823,37 @@ export default function (pi: ExtensionAPI) {
       refreshBoard(ctx);
       refreshStatus(ctx);
 
-      // Send loop kick-off so the LLM immediately continues in the returned phase.
-      if (isAutoBack) {
-        const kickOff = currentPhase === "code_review"
-          ? [
-              `🔁 code_review → implement 돌아옴: ${params.reason}`,
-              "",
-              "수정 루프 행동:",
-              "1. 리빰1 사유에서 제시된 문제를 수정하세요.",
-              "2. 수정 완료 후 workflow_approve 호출 → code_review 에 재진입합니다.",
-              "3. 리뷰 통과(Critical=0, Major≤2) 시 submit_review_package 호출합니다.",
-              "",
-              formatWorkflowAction(state.workflow),
-            ].join("\n")
-          : [
-              `🔁 plan_review → plan 돌아옴: ${params.reason}`,
-              "",
-              "수정 루프 행동:",
-              "1. DPAA 실패 이유를 바탕으로 계획 아티팩트를 수정하세요.",
-              "2. 수정 완료 후 workflow_approve 호출 → plan_review 에 재진입합니다.",
-              "3. DPAA 통과 시 implement 단계로 자동 진행됩니다.",
-              "",
-              formatWorkflowAction(state.workflow),
-            ].join("\n");
-        void steerLlm(kickOff, "followUp");
-      }
+      // Build kick-off text in the tool result — NOT via sendUserMessage (steerLlm).
+      // A follow-up steer can arrive after the phase has advanced, bypassing the
+      // onUserPrompt stale-marker check and replaying a stale [LLM WORKFLOW ACTION].
+      const kickOff = isAutoBack
+        ? (currentPhase === "code_review"
+            ? [
+                `🔁 code_review → implement 돌아옴: ${params.reason}`,
+                "",
+                "수정 루프 행동:",
+                "1. 리빰1 사유에서 제시된 문제를 수정하세요.",
+                "2. 수정 완료 후 workflow_approve 호출 → code_review 에 재진입합니다.",
+                "3. 리뷰 통과(Critical=0, Major≤2) 시 submit_review_package 호출합니다.",
+                "",
+                formatWorkflowAction(state.workflow),
+              ].join("\n")
+            : [
+                `🔁 plan_review → plan 돌아옴: ${params.reason}`,
+                "",
+                "수정 루프 행동:",
+                "1. DPAA 실패 이유를 바탕으로 계획 아티팩트를 수정하세요.",
+                "2. 수정 완료 후 workflow_approve 호출 → plan_review 에 재진입합니다.",
+                "3. DPAA 통과 시 implement 단계로 자동 진행됩니다.",
+                "",
+                formatWorkflowAction(state.workflow),
+              ].join("\n"))
+        : null;
 
       return {
-        content: [{ type: "text", text: `워크플로우 복구 완료: '${currentPhase}' → '${targetPhase}'\n\n${formatWorkflowAction(state.workflow)}` }],
+        content: [{ type: "text", text: kickOff ?? `워크플로우 복구 완료: '${currentPhase}' → '${targetPhase}'
+
+${formatWorkflowAction(state.workflow)}` }],
         details: { ok: true, from: currentPhase, to: targetPhase },
       };
     },
