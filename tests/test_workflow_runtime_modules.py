@@ -94,6 +94,42 @@ def test_runtime_policy_requires_approval_only_for_mutating_runtime_extension_pa
     assert data["nestedRuntime"] is True
 
 
+def test_field_log_actionable_hint_ignores_optional_corenlp_noise(tmp_path):
+    script = textwrap.dedent(
+        rf'''
+        const fs = require('fs');
+        const path = require('path');
+        const {{ createJiti }} = require('jiti');
+        const jiti = createJiti(path.resolve('runtime-test.js'), {{ interopDefault: false }});
+        const mod = jiti({json.dumps(str(ROOT / "target" / ".pi" / "extensions" / "workflow" / "field-log.ts"))});
+
+        const root = process.env.HARNESS_FIELD_LOG_ROOT;
+        const logDir = path.join(root, '.project-memory', 'harness');
+        fs.mkdirSync(logDir, {{ recursive: true }});
+        const events = [
+          {{
+            timestamp: '2026-06-12T00:00:00.000Z',
+            event: {{ category: 'update', type: 'update.failed', severity: 'warning', status: 'open', summary: 'CoreNLP startup failed' }},
+            failure: {{ summary: 'CoreNLP startup failed', actual: 'dockerDesktopLinuxEngine unavailable; optional environment follow-up' }},
+          }},
+          {{
+            timestamp: '2026-06-12T00:01:00.000Z',
+            event: {{ category: 'dpaa', type: 'gate.failed', severity: 'warning', status: 'open' }},
+            failure: {{ summary: 'Failed to read DPAA report: ENOENT' }},
+          }},
+        ];
+        fs.writeFileSync(path.join(logDir, 'events.jsonl'), events.map((event) => JSON.stringify(event)).join('\n') + '\n', 'utf8');
+        console.log(JSON.stringify({{ hint: mod.formatLatestActionableFailureHint() }}));
+        '''
+    )
+    data = _run_node(script, tmp_path)
+
+    assert "last actionable failure" in data["hint"]
+    assert "dpaa" in data["hint"]
+    assert "Failed to read DPAA report" in data["hint"]
+    assert "CoreNLP" not in data["hint"]
+
+
 def test_write_dpaa_receipt_includes_report_descriptor(tmp_path):
     plan = tmp_path / "plan.md"
     report = tmp_path / "dpaa-report.json"

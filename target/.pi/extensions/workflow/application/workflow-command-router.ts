@@ -10,6 +10,7 @@ import {
   formatArtifactSnapshotCreated,
   exportFieldLogs,
   formatHarnessDoctor,
+  formatLatestActionableFailureHint,
   formatLatestDpaaAudit,
   formatRecentFieldLogs,
   formatWorkflowPrerequisiteScan,
@@ -99,6 +100,9 @@ function formatConditionalProtocolHints(state: WorkflowRuntimeState): string {
   if (state.reviewPackageToken?.reviewArtifactError) {
     hints.push("- review artifact write failed → use evidence-verification to cite the guard token and preserve review evidence before commit.");
   }
+
+  const latestActionableFailure = formatLatestActionableFailureHint();
+  if (latestActionableFailure) hints.push(latestActionableFailure);
 
   if (workflow.history.length >= 8) {
     hints.push("- long workflow history → use compact-handoff before manual context compaction.");

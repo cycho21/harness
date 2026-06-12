@@ -482,6 +482,16 @@ class TestCompactionAndArtifactContracts:
         assert "review artifact write failed" in src.lower()
         assert "evidence-verification" in src
 
+    def test_status_hints_surface_latest_actionable_field_log_not_optional_noise(self):
+        router = (EXT_DIR / "application" / "workflow-command-router.ts").read_text(encoding="utf-8")
+        field_log = _src("field-log.ts")
+        assert "formatLatestActionableFailureHint" in router
+        assert "formatLatestActionableFailureHint" in field_log
+        assert "CoreNLP startup failed" in field_log
+        assert "dockerDesktopLinuxEngine" in field_log
+        assert "optional environment follow-up" in field_log
+        assert "last actionable failure" in field_log
+
 
 # ---------------------------------------------------------------------------
 # format.ts — phase guidance

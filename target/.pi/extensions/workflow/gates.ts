@@ -969,6 +969,20 @@ export type PushPolicyScanResult = {
   findings: Array<{ category: string; files: string[] }>;
 };
 
+const HIGH_RISK_PUSH_PATH_SEGMENTS = new Set([
+  "auth", "authentication", "authorization", "oauth",
+  "password", "secret", "secrets", "credential", "credentials",
+  "token", "tokens", "session", "sessions", "permission", "permissions",
+  "security", "crypto", "encryption",
+]);
+const HIGH_RISK_PUSH_FILENAMES = new Set(["schema.prisma"]);
+
+function hasHighRiskPushPath(file: string): boolean {
+  const segments = file.split("/").map((segment) => segment.toLowerCase()).filter(Boolean);
+  const filename = segments[segments.length - 1] ?? "";
+  return HIGH_RISK_PUSH_FILENAMES.has(filename) || segments.some((segment) => HIGH_RISK_PUSH_PATH_SEGMENTS.has(segment));
+}
+
 export function scanPushPolicy(root: string | null = getGitRoot()): PushPolicyScanResult {
   const maxChanged = Number.parseInt(process.env.HARNESS_POLICY_MAX_CHANGED_FILES ?? "30", 10);
   const limit = Number.isFinite(maxChanged) && maxChanged > 0 ? maxChanged : 30;
@@ -1000,6 +1014,7 @@ export function scanPushPolicy(root: string | null = getGitRoot()): PushPolicySc
     { category: "DB migration changed (db/migration)", match: ({ file }) => /(^|\/)db\/migration\//.test(file) },
     { category: "Dockerfile changed", match: ({ file }) => /(^|\/)(Dockerfile|.*\.Dockerfile)$/.test(file) },
     { category: "CI config changed", match: ({ file }) => /(^\.github\/workflows\/|^\.gitlab-ci\.ya?ml$|(^|\/)Jenkinsfile$|^azure-pipelines\.ya?ml$|^\.circleci\/|^bitbucket-pipelines\.ya?ml$)/.test(file) },
+    { category: "High-risk path changed (auth/session/security/secret/schema)", match: ({ file }) => hasHighRiskPushPath(file) },
     { category: "Deleted files", match: ({ status }) => status.includes("D") },
   ];
 

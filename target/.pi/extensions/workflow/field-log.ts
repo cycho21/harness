@@ -334,6 +334,26 @@ export function readRecentFieldLogEvents(limitCount = 10): any[] {
   }).filter(Boolean);
 }
 
+export function formatLatestActionableFailureHint(limitCount = 20): string {
+  const latest = readRecentFieldLogEvents(limitCount)
+    .reverse()
+    .find((event) => event?.event?.status !== "resolved" && !isOptionalEnvironmentFollowUp(event));
+  if (!latest) return "";
+  const category = String(latest.event?.category ?? "unknown");
+  const summary = String(latest.failure?.summary ?? latest.event?.summary ?? "unknown failure").slice(0, 120);
+  return `- last actionable failure (${category}) → use trace/continuation-safety before retrying: ${summary}`;
+}
+
+function isOptionalEnvironmentFollowUp(event: any): boolean {
+  const text = [
+    event?.failure?.summary,
+    event?.failure?.actual,
+    event?.event?.summary,
+    event?.event?.primaryMessage,
+  ].filter(Boolean).join("\n");
+  return /CoreNLP startup failed|dockerDesktopLinuxEngine|setup_corenlp/i.test(text) && /Docker|CoreNLP|optional environment follow-up/i.test(text);
+}
+
 export function formatRecentFieldLogs(limitCount = 10): string {
   const events = readRecentFieldLogEvents(limitCount);
   if (events.length === 0) return [banner("🧾 Harness field logs"), "No field log events found."].join("\n");

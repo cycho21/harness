@@ -33,6 +33,7 @@ def _mirror_policy_scan(lines: list[str], max_changed: int = 30) -> dict[str, li
         ("DB migration changed", lambda e: re.search(r"(^|/)db/migration/", e.file)),
         ("Dockerfile changed", lambda e: re.search(r"(^|/)(Dockerfile|.*\.Dockerfile)$", e.file)),
         ("CI config changed", lambda e: re.search(r"(^\.github/workflows/|^\.gitlab-ci\.ya?ml$|(^|/)Jenkinsfile$|^azure-pipelines\.ya?ml$|^\.circleci/|^bitbucket-pipelines\.ya?ml$)", e.file)),
+        ("High-risk path changed", lambda e: _has_high_risk_path(e.file)),
         ("Deleted files", lambda e: "D" in e.status),
     ]
     findings = {
@@ -56,6 +57,9 @@ def test_push_policy_scan_is_wired_for_git_push_gate():
         "db\\/migration\\/",
         "Dockerfile|.*\\.Dockerfile",
         "github\\/workflows",
+        "High-risk path changed",
+        "auth",
+        "schema.prisma",
         "Deleted files",
         "Excessive file changes",
         "HARNESS_POLICY_MAX_CHANGED_FILES",
@@ -72,6 +76,19 @@ def test_push_policy_scan_is_wired_for_git_push_gate():
     assert "gateFailures" in workflow
     assert "state.gateFailures.set" in workflow
     assert "/workflow skip policy-scan <사유>" in workflow
+
+
+def _has_high_risk_path(file: str) -> bool:
+    high_risk_segments = {
+        "auth", "authentication", "authorization", "oauth",
+        "password", "secret", "secrets", "credential", "credentials",
+        "token", "tokens", "session", "sessions", "permission", "permissions",
+        "security", "crypto", "encryption",
+    }
+    high_risk_filenames = {"schema.prisma"}
+    segments = [segment.lower() for segment in file.split("/") if segment]
+    filename = segments[-1] if segments else ""
+    return filename in high_risk_filenames or any(segment in high_risk_segments for segment in segments)
 
 
 def test_push_policy_scan_categories_match_requested_risky_files():
@@ -96,3 +113,19 @@ def test_push_policy_scan_categories_match_requested_risky_files():
 def test_push_policy_scan_flags_excessive_file_count():
     findings = _mirror_policy_scan([f" M src/File{i}.java" for i in range(31)], max_changed=30)
     assert "Excessive file changes (31 > 30)" in findings
+
+
+def test_push_policy_scan_flags_high_risk_paths():
+    findings = _mirror_policy_scan([
+        " M src/main/java/com/acme/auth/LoginService.java",
+        " M src/main/java/com/acme/session/SessionStore.java",
+        " M src/main/java/com/acme/security/CryptoConfig.java",
+        " M prisma/schema.prisma",
+    ])
+
+    assert findings["High-risk path changed"] == [
+        "src/main/java/com/acme/auth/LoginService.java",
+        "src/main/java/com/acme/session/SessionStore.java",
+        "src/main/java/com/acme/security/CryptoConfig.java",
+        "prisma/schema.prisma",
+    ]
