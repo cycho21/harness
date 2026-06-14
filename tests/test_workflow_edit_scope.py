@@ -9,7 +9,7 @@ Verifies:
 - workflow_propose_edit tool registered
 - workflow_apply_approved_edit tool registered
 - Phase restriction (only write phases)
-- Protected path patterns cover extension files, node_modules, .git, .env
+- Protected path patterns cover extension files, node_modules, .git, .env, secrets, .ssh
 """
 from pathlib import Path
 import subprocess
@@ -81,6 +81,8 @@ def test_protected_patterns_cover_extensions():
     assert "node_modules" in src
     assert ".git" in src
     assert ".env" in src
+    assert "secrets" in src
+    assert ".ssh" in src
 
 
 def test_protected_patterns_cover_harness_ts_files():
@@ -240,3 +242,27 @@ console.log(JSON.stringify(result));
         return  # skip if jiti unavailable
     assert data.get("ok") is False
     assert "protected" in (data.get("reason") or "").lower()
+
+
+def test_validate_sensitive_default_paths_blocked_runtime():
+    script = r"""
+const path = require('path');
+const { createJiti } = require('jiti');
+const jiti = createJiti(__filename, { interopDefault: false });
+const mod = jiti(path.resolve('.pi/extensions/workflow/edit-scope.ts'));
+const gitRoot = path.resolve('.');
+const cases = {
+  gitConfig: mod.validateEditPath('.git/config', gitRoot, false),
+  envLocal: mod.validateEditPath('apps/api/.env.local', gitRoot, false),
+  secretsFile: mod.validateEditPath('config/secrets/prod.key', gitRoot, false),
+  sshKey: mod.validateEditPath('.ssh/id_rsa', gitRoot, false),
+  nestedSshKey: mod.validateEditPath('ops/.ssh/deploy_key', gitRoot, false),
+};
+console.log(JSON.stringify(cases));
+"""
+    data = _run_node(script)
+    if "error" in data:
+        return  # skip if jiti unavailable
+    for result in data.values():
+        assert result.get("ok") is False
+        assert "protected" in (result.get("reason") or "").lower()

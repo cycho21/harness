@@ -379,6 +379,7 @@ hard guard는 자동 진행 중에도 우회할 수 없습니다.
 | Review completion | `code_review → review_approved`, `commit → push` | review package/quality gate와 순차 전이 이력으로 검사 |
 | TDD write policy | `implement` 중 Java production class 작성/수정 | 새 production class는 관련 테스트가 먼저 있어야 합니다. `FooTest`, `FooTests`, `FooIT`, `FooIntegrationTest`를 같은 test package 기준으로 인정하며, 기존 class 수정은 hard block 대신 steer reminder로 완화합니다. |
 | Extension modification approval | `.pi/extensions/**` 수정 | 사용자 승인 없는 extension 수정 차단 |
+| Guarded edit protected paths | `workflow_propose_edit` / `workflow_apply_approved_edit` | `.git/**`, `.env*`, `secrets/**`, `.ssh/**`, `node_modules/**`, runtime `.pi` 코드 경로 차단 |
 
 Guard block 메시지는 `Why blocked`, `Default handling for the LLM`, `Next actions`, 조건부 `Exception path`, `Caution` 순서로 표시됩니다. `Exception path`는 skip 경로가 있는 guard에서만 표시됩니다. `Default handling for the LLM`은 skip-first 금지, 수정 가능한 실패의 원인 수정 후 재시도, 사용자 질문 조건 제한을 먼저 제시합니다. Workspace guard는 파일 수정·workflow state 변경·evidence 시뮬레이션을 금지하고 올바른 directory/branch 복귀를 요청합니다. Policy-scan guard는 위험 변경을 숨기거나 조용히 수정하지 말고 위험 요약과 interactive policy approval path를 제시하도록 안내합니다.
 

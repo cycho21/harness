@@ -7,7 +7,7 @@
  * Safety guarantees:
  *   - Path traversal detection (canonicalize then check prefix)
  *   - Symlink rejection by default
- *   - Protected path blocking (.pi/extensions, node_modules, .git, .env)
+ *   - Protected path blocking (.pi/extensions, node_modules, .git, .env, secrets, .ssh)
  *   - Base-file hash verification before applying edits (detects concurrent changes)
  *   - Plan hash binding: proposed edits are tied to the current DPAA-approved plan
  */
@@ -27,6 +27,8 @@ const PROTECTED_PATTERNS: RegExp[] = [
   /(^|\/)node_modules(\/|$)/,            // npm dependencies
   /(^|\/)\.git(\/|$)/,                   // git internals
   /(^|\/)\.env(\.|$)/,                   // .env, .env.local, etc.
+  /(^|\/)secrets(\/|$)/,                 // secret material directories
+  /(^|\/)\.ssh(\/|$)/,                   // SSH private keys/config
   /^\.harness\/workflow-policy\.json$/,  // policy file (admin only)
 ];
 

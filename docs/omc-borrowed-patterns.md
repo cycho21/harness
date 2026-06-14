@@ -38,6 +38,7 @@ https://github.com/yeachan-heo/oh-my-claudecode
 | Self-improve benchmark idea | Merged into `evidence-verification` as small workflow regression benchmark matrix | `target/.pi/skills/evidence-verification/SKILL.md` |
 | Path-based push risk classifier | Push policy scan now flags high-risk path segments and filenames such as auth/session/security/secret/token/permission and `schema.prisma` as a distinct category, extending existing push policy rather than adding a new gate | `target/.pi/extensions/workflow/gates.ts`, `tests/test_push_policy_scan.py` |
 | Actionable-vs-optional failure hinting | `/workflow status` surfaces the latest actionable field-log failure while suppressing optional environment follow-up noise such as CoreNLP/Docker startup failures | `target/.pi/extensions/workflow/field-log.ts`, `target/.pi/extensions/workflow/application/workflow-command-router.ts`, `tests/test_workflow_runtime_modules.py` |
+| Permission deny-defaults | Guarded edit path validation now blocks additional sensitive defaults (`secrets/**`, `.ssh/**`) alongside existing `.git/**`, `.env*`, runtime `.pi`, and dependency paths | `target/.pi/extensions/workflow/edit-scope.ts`, `tests/test_workflow_edit_scope.py` |
 
 ## Partially Adopted Patterns
 
