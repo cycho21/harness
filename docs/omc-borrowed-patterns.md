@@ -36,8 +36,8 @@ https://github.com/yeachan-heo/oh-my-claudecode
 | Prompt/behavior contract testing mindset | Prompt contract documentation and static tests for critical protocol text | `docs/workflow-prompt-contracts.md`, `tests/test_workflow_ts_static.py` |
 | Runtime event map | Workflow event-flow documentation from start through push/recovery | `docs/workflow-runtime-events.md` |
 | Self-improve benchmark idea | Merged into `evidence-verification` as small workflow regression benchmark matrix | `target/.pi/skills/evidence-verification/SKILL.md` |
-| Path-based push risk classifier | Push policy scan now flags high-risk path segments and filenames such as auth/session/security/secret/token/permission and `schema.prisma` as a distinct category, extending existing push policy rather than adding a new gate | `target/.pi/extensions/workflow/gates.ts`, `tests/test_push_policy_scan.py` |
-| Actionable-vs-optional failure hinting | `/workflow status` surfaces the latest still-active actionable field-log failure while suppressing optional environment follow-up noise such as CoreNLP/Docker startup failures and stale cleared gate failures | `target/.pi/extensions/workflow/field-log.ts`, `target/.pi/extensions/workflow/application/workflow-command-router.ts`, `tests/test_workflow_runtime_modules.py` |
+| Path-based push risk classifier | Push policy scan now flags high-risk path segments and filenames such as auth/session/security/secret/token/permission, `schema.prisma`, `.env*`, compose files, infra/terraform/k8s/rbac/iam/policy paths as a distinct category, extending existing push policy rather than adding a new gate | `target/.pi/extensions/workflow/gates.ts`, `tests/test_push_policy_scan.py` |
+| Actionable-vs-optional failure hinting | `/workflow status` and system prompt context surface the latest still-active actionable field-log failure while suppressing optional environment follow-up noise such as CoreNLP/Docker startup failures and stale cleared gate failures, including `interview-ambiguity` gate failures | `target/.pi/extensions/workflow/field-log.ts`, `target/.pi/extensions/workflow/application/workflow-command-router.ts`, `target/.pi/extensions/workflow/application/prompt-context.ts`, `tests/test_workflow_runtime_modules.py` |
 | Permission deny-defaults | Guarded edit path validation now blocks additional sensitive defaults (`secrets/**`, `.ssh/**`) alongside existing `.git/**`, `.env*`, runtime `.pi`, and dependency paths | `target/.pi/extensions/workflow/edit-scope.ts`, `tests/test_workflow_edit_scope.py` |
 
 ## Partially Adopted Patterns
@@ -46,7 +46,7 @@ https://github.com/yeachan-heo/oh-my-claudecode
 |-------------|-----------------------|-----------------------|
 | Subagent tracker / async ownership | Guidance exists in `continuation-safety`; reviewer subagent timeout is raised in `target/.pi/settings.json`; no mechanical runtime tracker yet | Extend workflow status/review gates if mechanizing. Do not add another pending-work skill. |
 | Stop/idle hook blocking | Some continuation/reminder behavior exists; pending async ownership is not mechanically blocked | Add runtime checks only if real dogfood shows missed pending work. |
-| Artifact descriptor integration | Descriptor helpers exist; large `submit_review_package` payloads are written as review descriptors, DPAA receipts now include `dpaa-report` descriptors, and trace/verification outputs are still skill-level reports rather than automatic artifacts | Continue wiring existing `artifact-descriptor.ts` into outputs instead of defining a second descriptor format. |
+| Artifact descriptor integration | Descriptor helpers exist; large `submit_review_package` payloads are written as review descriptors, DPAA receipts include `dpaa-report` descriptors, and trace/verification skills now define descriptor-backed handoff paths while runtime automation remains optional | Continue wiring existing `artifact-descriptor.ts` into outputs instead of defining a second descriptor format. |
 | Dogfood/runtime fixture benchmarks | Runtime fixture tests now cover interview wizard topology/clarity wrapping, `/workflow trace` routing, and high-risk plan-review continuation prompts; full manual dogfood is still pending | Extend existing workflow runtime tests for new behavior, using `evidence-verification` for evidence. |
 | Phase protection levels | Documented only; not a hard gate taxonomy | Mechanize only where a concrete phase safety bug appears. |
 | Compact lifecycle | `compact-handoff` exists; no automatic resume validation | Extend `compact-handoff`, do not add a separate resume skill. |
@@ -78,7 +78,7 @@ https://github.com/yeachan-heo/oh-my-claudecode
 
 If future work continues OMC borrowing, prioritize:
 
-1. Wiring `artifact-descriptor.ts` into trace/verification outputs beyond review packages and DPAA receipts.
+1. Runtime automation for trace/verification descriptor writing beyond the skill-level handoff contract.
 2. Additional status surfacing only for concrete pending-work/last-failure triggers, without making protocols mandatory.
 3. Additional command-router fallback tests only when a new route or capability fallback is added.
 4. Additional manual dogfood transcripts for full `/workflow start` UX.

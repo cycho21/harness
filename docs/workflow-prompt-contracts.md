@@ -14,10 +14,10 @@ Add or update tests when changing text that controls:
 - interview wizard kickoff rules
 - plan review repair and high-risk consensus guidance
 - code review package requirements, changed-scope coverage, and finding position validation
-- documentation/verification/field-log reminders
+- documentation/verification/field-log reminders and actionable failure hints in status/system prompt context
 - accepted-risk skip wording
 - workspace mismatch and policy scan recovery instructions
-- push execution constraints
+- push execution constraints and `git-push` catalog command guidance
 - compact handoff, trace, cleanup, evidence-verification, continuation-safety, and worktree-safety protocols
 
 ## Test Styles
@@ -38,7 +38,8 @@ Avoid brittle full-string snapshots unless exact formatting is the behavior bein
 - `plan_review` high-risk guidance must mention Architect/Critic consensus review.
 - `code_review` must require `submit_review_package` and independent review before approval.
 - `code_review` skill text must preserve changed-file/hunk coverage checks and Critical/Major position validation.
-- `push` must require policy scan approval and a real `git push` completion event.
+- `push` must require policy scan approval, prefer the `workflow_run_command` `git-push` catalog command, and require a real `git push` completion event.
+- `trace` and `evidence-verification` skills must preserve the artifact descriptor handoff contract.
 - `compact-handoff` must say it does not invoke native compaction itself.
 
 ## Review Checklist

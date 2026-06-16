@@ -48,6 +48,18 @@ Down-rank hypotheses that rely mainly on weak evidence when stronger contradicto
 6. Merge hypotheses only when they reduce to the same root mechanism.
 7. Recommend one discriminating probe before proposing a fix.
 
+## Artifact Descriptor Handoff
+
+If the trace output becomes long or must be referenced by later workflow phases, write it as a descriptor-backed artifact instead of pasting it repeatedly:
+
+- Path: `.ai/workflow-artifacts/<workflow-id-or-session>/trace-<timestamp>.md`
+- Descriptor kind: `trace`
+- Producer: `{ system: "harness", component: "trace" }`
+- Retention: `until-completion` unless the user asks for persistent documentation
+- Summary: one sentence naming the observation and current best explanation
+
+Reuse the existing `artifact-descriptor.ts` format; do not invent a second artifact schema.
+
 ## Output Template
 
 ```markdown

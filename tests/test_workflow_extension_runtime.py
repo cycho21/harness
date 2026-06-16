@@ -920,6 +920,66 @@ def test_workflow_extension_runtime_submit_review_package_writes_descriptor_for_
     assert data["reviewEntryHasInlineLargePayload"] is False
 
 
+def test_workflow_extension_runtime_submit_review_package_records_structured_coverage_evidence(tmp_path):
+    script = textwrap.dedent(
+        r'''
+        const path = require('path');
+        const { createJiti } = require('jiti');
+        process.chdir('target');
+        process.env.HARNESS_CODE_QUALITY_GUARD_CMD = 'node -e "process.exit(0)"';
+
+        const entries = [];
+        const pi = {
+          events: {},
+          commands: {},
+          tools: {},
+          on(name, fn) { this.events[name] = fn; },
+          registerCommand(name, spec) { this.commands[name] = spec; },
+          registerTool(spec) { this.tools[spec.name] = spec; },
+          appendEntry(type, data) { entries.push({ type, data }); },
+        };
+        const jiti = createJiti(path.resolve('runtime-test.js'), { interopDefault: false });
+        jiti(path.resolve('.pi/extensions/workflow.ts')).default(pi);
+
+        const ctx = { hasUI: true, ui: { notify() {}, confirm: async () => true } };
+
+        (async () => {
+          await pi.commands.workflow.handler('start Runtime review coverage evidence', ctx);
+          await pi.commands.workflow.handler('state implement', ctx);
+          await pi.commands.workflow.handler('approve', ctx);
+          const result = await pi.tools.submit_review_package.execute('review-coverage', {
+            mainReviewSummary: 'Main self-review checked all changed files.',
+            reviewerReviewSummary: 'Independent reviewer validated changed hunks.',
+            qualityGateSummary: 'codeQualityGuard passed.',
+            reviewedFiles: ['target/.pi/extensions/workflow.ts', 'tests/test_workflow_extension_runtime.py::review package case'],
+            skippedFiles: [{ path: 'docs/generated.html', reason: 'generated from markdown and not manually reviewed' }],
+            positionValidation: 'No Critical/Major findings remained; no file:line references required validation.',
+            critical: 0,
+            major: 0,
+            minor: 0,
+          }, undefined, undefined, ctx);
+          const reviewEntry = entries.find((entry) => entry.type === 'harness-review-package-token');
+          console.log(JSON.stringify({
+            ok: result.details.ok,
+            reviewedFiles: result.details.reviewedFiles,
+            skippedFiles: result.details.skippedFiles,
+            positionValidation: result.details.positionValidation,
+            token: reviewEntry.data,
+          }));
+        })().catch((error) => { console.error(error.stack || String(error)); process.exit(1); });
+        '''
+    )
+    data = _run_node_runtime(script, tmp_path)
+
+    assert data["ok"] is True
+    assert data["reviewedFiles"] == ["target/.pi/extensions/workflow.ts", "tests/test_workflow_extension_runtime.py::review package case"]
+    assert data["skippedFiles"] == [{"path": "docs/generated.html", "reason": "generated from markdown and not manually reviewed"}]
+    assert data["positionValidation"].startswith("No Critical/Major")
+    assert data["token"]["reviewedFiles"] == data["reviewedFiles"]
+    assert data["token"]["skippedFiles"] == data["skippedFiles"]
+    assert data["token"]["positionValidation"] == data["positionValidation"]
+
+
 def test_extension_modification_requires_interactive_user_approval(tmp_path):
     script = textwrap.dedent(
         r'''

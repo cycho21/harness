@@ -84,11 +84,18 @@ def _has_high_risk_path(file: str) -> bool:
         "password", "secret", "secrets", "credential", "credentials",
         "token", "tokens", "session", "sessions", "permission", "permissions",
         "security", "crypto", "encryption",
+        "infra", "infrastructure", "terraform", "k8s", "kubernetes",
+        "rbac", "iam", "policy", "policies",
     }
     high_risk_filenames = {"schema.prisma"}
+    high_risk_filename_patterns = [re.compile(r"^\.env[^/]*$"), re.compile(r"^(docker-)?compose(\..*)?\.ya?ml$")]
     segments = [segment.lower() for segment in file.split("/") if segment]
     filename = segments[-1] if segments else ""
-    return filename in high_risk_filenames or any(segment in high_risk_segments for segment in segments)
+    return (
+        filename in high_risk_filenames
+        or any(pattern.search(filename) for pattern in high_risk_filename_patterns)
+        or any(segment in high_risk_segments for segment in segments)
+    )
 
 
 def test_push_policy_scan_categories_match_requested_risky_files():
@@ -121,6 +128,13 @@ def test_push_policy_scan_flags_high_risk_paths():
         " M src/main/java/com/acme/session/SessionStore.java",
         " M src/main/java/com/acme/security/CryptoConfig.java",
         " M prisma/schema.prisma",
+        " M .env.production",
+        " M docker-compose.yml",
+        " M infra/main.tf",
+        " M k8s/deployment.yaml",
+        " M terraform/prod.tf",
+        " M config/rbac/roles.yaml",
+        " M policies/deploy-policy.yaml",
     ])
 
     assert findings["High-risk path changed"] == [
@@ -128,4 +142,11 @@ def test_push_policy_scan_flags_high_risk_paths():
         "src/main/java/com/acme/session/SessionStore.java",
         "src/main/java/com/acme/security/CryptoConfig.java",
         "prisma/schema.prisma",
+        ".env.production",
+        "docker-compose.yml",
+        "infra/main.tf",
+        "k8s/deployment.yaml",
+        "terraform/prod.tf",
+        "config/rbac/roles.yaml",
+        "policies/deploy-policy.yaml",
     ]

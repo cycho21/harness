@@ -15,7 +15,7 @@ const AUDIT_FILE = "audit.jsonl";
 // Cache stable runtime values that don't change during a session.
 const _runtimeCache: { harnessVersion?: string; pythonVersion?: string } = {};
 
-export type FieldLogCategory = "dpaa" | "code-quality" | "push-policy" | "workspace" | "phase" | "init" | "update" | "doctor" | "test" | "tool" | "prompt" | "user-correction" | "unknown";
+export type FieldLogCategory = "dpaa" | "code-quality" | "push-policy" | "interview-ambiguity" | "workspace" | "phase" | "init" | "update" | "doctor" | "test" | "tool" | "prompt" | "user-correction" | "unknown";
 export type FieldLogEventType = "gate.failed" | "gate.skipped" | "tool.failed" | "test.failed" | "phase.violation" | "phase.transition" | "policy.blocked" | "doctor.failed" | "update.failed" | "user.correction" | "rollback.performed" | "lesson.proposed" | "failure.resolved";
 export type FieldLogImprovementKind = "schema" | "dpaa-rule" | "workflow-rule" | "doctor-check" | "init-update" | "prompt-instruction" | "test-coverage" | "docs" | "unknown";
 
@@ -348,7 +348,7 @@ export function formatLatestActionableFailureHint(
   return `- last actionable failure (${category}) → use trace/continuation-safety before retrying: ${summary}`;
 }
 
-const GATE_FAILURE_CATEGORIES = new Set(["dpaa", "code-quality", "push-policy"]);
+const GATE_FAILURE_CATEGORIES = new Set(["dpaa", "code-quality", "push-policy", "interview-ambiguity"]);
 
 function isStaleGateFailure(event: any, activeGateFailures: Set<string> | null): boolean {
   if (!activeGateFailures) return false;

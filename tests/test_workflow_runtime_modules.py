@@ -161,6 +161,38 @@ def test_field_log_actionable_hint_suppresses_resolved_gate_categories(tmp_path)
     assert "dpaa" in data["active"]
 
 
+def test_field_log_actionable_hint_handles_interview_ambiguity_gate_category(tmp_path):
+    script = textwrap.dedent(
+        rf'''
+        const fs = require('fs');
+        const path = require('path');
+        const {{ createJiti }} = require('jiti');
+        const jiti = createJiti(path.resolve('runtime-test.js'), {{ interopDefault: false }});
+        const mod = jiti({json.dumps(str(ROOT / "target" / ".pi" / "extensions" / "workflow" / "field-log.ts"))});
+
+        const root = process.env.HARNESS_FIELD_LOG_ROOT;
+        const logDir = path.join(root, '.project-memory', 'harness');
+        fs.mkdirSync(logDir, {{ recursive: true }});
+        const event = {{
+          timestamp: '2026-06-12T00:01:00.000Z',
+          event: {{ category: 'interview-ambiguity', type: 'gate.failed', severity: 'blocker', status: 'open' }},
+          failure: {{ summary: 'Interview ambiguity score missing before interview → plan transition.' }},
+        }};
+        fs.writeFileSync(path.join(logDir, 'events.jsonl'), JSON.stringify(event) + '\n', 'utf8');
+        console.log(JSON.stringify({{
+          stale: mod.formatLatestActionableFailureHint(20, {{ activeGateFailures: [] }}),
+          active: mod.formatLatestActionableFailureHint(20, {{ activeGateFailures: ['interview-ambiguity'] }}),
+        }}));
+        '''
+    )
+    data = _run_node(script, tmp_path)
+
+    assert data["stale"] == ""
+    assert "last actionable failure" in data["active"]
+    assert "interview-ambiguity" in data["active"]
+    assert "Interview ambiguity score missing" in data["active"]
+
+
 def test_write_dpaa_receipt_includes_report_descriptor(tmp_path):
     plan = tmp_path / "plan.md"
     report = tmp_path / "dpaa-report.json"

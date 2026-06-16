@@ -494,6 +494,39 @@ class TestCompactionAndArtifactContracts:
         assert "optional environment follow-up" in field_log
         assert "last actionable failure" in field_log
 
+    def test_system_prompt_surfaces_latest_actionable_failure_hint(self):
+        prompt_context = (EXT_DIR / "application" / "prompt-context.ts").read_text(encoding="utf-8")
+        assert "formatLatestActionableFailureHint" in prompt_context
+        assert "[Workflow Failure Hint]" in prompt_context
+        assert "activeGateFailures" in prompt_context
+
+    def test_interview_ambiguity_field_log_category_is_first_class(self):
+        field_log = _src("field-log.ts")
+        router = (EXT_DIR / "application" / "workflow-command-router.ts").read_text(encoding="utf-8")
+        gates = _src("gates.ts")
+        assert '"interview-ambiguity"' in field_log
+        assert '"interview-ambiguity"' in router
+        assert 'category: "interview-ambiguity"' in gates
+        assert "fieldLogCategoryForGate" in router
+
+    def test_trace_and_evidence_skills_use_artifact_descriptor_handoff(self):
+        trace = (ROOT / "target" / ".pi" / "skills" / "trace" / "SKILL.md").read_text(encoding="utf-8")
+        evidence = (ROOT / "target" / ".pi" / "skills" / "evidence-verification" / "SKILL.md").read_text(encoding="utf-8")
+        for doc, kind, component in [(trace, "trace", "trace"), (evidence, "verification", "evidence-verification")]:
+            assert "Artifact Descriptor Handoff" in doc
+            assert f"Descriptor kind: `{kind}`" in doc
+            assert f'component: "{component}"' in doc
+            assert "artifact-descriptor.ts" in doc
+
+    def test_review_package_accepts_structured_coverage_evidence(self):
+        workflow = _workflow_src()
+        runtime_state = _src("runtime-state.ts")
+        skill = (ROOT / "target" / ".pi" / "skills" / "code-review" / "SKILL.md").read_text(encoding="utf-8")
+        for token in ["reviewedFiles", "skippedFiles", "positionValidation"]:
+            assert token in workflow
+            assert token in runtime_state
+            assert token in skill
+
 
 # ---------------------------------------------------------------------------
 # format.ts — phase guidance
@@ -514,6 +547,12 @@ class TestFormatTs:
         plan_review_idx = src.index('"plan_review"')
         guidance_block = src[plan_review_idx:plan_review_idx + 300]
         assert "DPAA" in guidance_block
+
+    def test_push_phase_prefers_git_push_catalog_command(self):
+        src = _src("format.ts")
+        assert "workflow_run_command git-push" in src
+        assert "workflow_run_command with commandId 'git-push'" in src
+        assert "Do NOT call workflow_approve" in src
 
 
 # ---------------------------------------------------------------------------

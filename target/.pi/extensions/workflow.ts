@@ -466,6 +466,12 @@ export default function (pi: ExtensionAPI) {
       mainReviewSummary: Type.String({ description: "Main agent self-review summary and fixes performed." }),
       reviewerReviewSummary: Type.String({ description: "Independent reviewer/subagent findings summary." }),
       qualityGateSummary: Type.String({ description: "Quality gate/test/lint/typecheck result summary." }),
+      reviewedFiles: Type.Optional(Type.Array(Type.String({ description: "Changed file or hunk reviewed during the coverage pass." }), { description: "Optional changed-file/hunk coverage evidence reviewed by the main/independent reviewer." })),
+      skippedFiles: Type.Optional(Type.Array(Type.Object({
+        path: Type.String({ description: "Changed file/hunk intentionally skipped during review." }),
+        reason: Type.String({ description: "Why this file/hunk was out of review scope." }),
+      }), { description: "Optional changed files/hunks skipped during review with explicit reasons." })),
+      positionValidation: Type.Optional(Type.String({ description: "Optional confirmation that Critical/Major finding file:line ranges were validated against current files, or why none needed validation." })),
       critical: Type.Number({ description: "Critical issue count after fixes." }),
       major: Type.Number({ description: "Major issue count after fixes." }),
       minor: Type.Number({ description: "Minor issue count after fixes." }),
@@ -489,6 +495,23 @@ export default function (pi: ExtensionAPI) {
         return { content: [{ type: "text", text: `Review package rejected: Critical=${critical} (required 0), Major=${major} (required ≤2). Return to implement, fix issues, then review again.` }], details: { ok: false, critical, major, minor } };
       }
 
+      const reviewedFiles = Array.isArray(params.reviewedFiles)
+        ? params.reviewedFiles.map((item) => String(item).trim()).filter(Boolean)
+        : [];
+      const skippedFiles = Array.isArray(params.skippedFiles)
+        ? params.skippedFiles.map((item: any) => ({ path: String(item?.path ?? "").trim(), reason: String(item?.reason ?? "").trim() })).filter((item) => item.path && item.reason)
+        : [];
+      const positionValidation = String(params.positionValidation ?? "").trim();
+      const coverageEvidenceMarkdown = reviewedFiles.length > 0 || skippedFiles.length > 0 || positionValidation
+        ? [
+            "",
+            "## Review Coverage Evidence",
+            ...(reviewedFiles.length > 0 ? ["Reviewed files/hunks:", ...reviewedFiles.map((file) => `- ${file}`)] : []),
+            ...(skippedFiles.length > 0 ? ["Skipped files/hunks:", ...skippedFiles.map((item) => `- ${item.path}: ${item.reason}`)] : []),
+            ...(positionValidation ? ["Position validation:", positionValidation] : []),
+          ]
+        : [];
+
       const reviewPackageMarkdown = [
         "# Review Package",
         "",
@@ -509,6 +532,7 @@ export default function (pi: ExtensionAPI) {
         "",
         "## Quality Gate Summary",
         String(params.qualityGateSummary),
+        ...coverageEvidenceMarkdown,
       ].join("\n");
       let reviewArtifact: ArtifactDescriptor | undefined;
       let reviewArtifactError: string | undefined;
@@ -542,6 +566,9 @@ export default function (pi: ExtensionAPI) {
         mainSummary: reviewArtifactReference ?? String(params.mainReviewSummary),
         reviewerSummary: reviewArtifactReference ?? String(params.reviewerReviewSummary),
         qualitySummary: reviewArtifactReference ?? String(params.qualityGateSummary),
+        reviewedFiles,
+        skippedFiles,
+        positionValidation,
         reviewArtifact,
         reviewArtifactError,
       };
@@ -576,7 +603,7 @@ export default function (pi: ExtensionAPI) {
         refreshStatus(ctx);
         await queueWorkflowContinuation(pi, ctx, state.workflow, result.transitions);
       }
-      return { content: [{ type: "text", text: notices.join("\n") }], details: { ok: result.ok, critical, major, minor, workflowPhase: state.workflow.phase, reviewArtifact, reviewArtifactError } };
+      return { content: [{ type: "text", text: notices.join("\n") }], details: { ok: result.ok, critical, major, minor, workflowPhase: state.workflow.phase, reviewedFiles, skippedFiles, positionValidation, reviewArtifact, reviewArtifactError } };
     },
 
     renderCall(args, theme) {

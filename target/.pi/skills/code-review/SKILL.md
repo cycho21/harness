@@ -202,7 +202,10 @@ During `code_review`, perform independent review **inline** (in the same agent s
 1. Main agent self-review → summarize findings
 2. Independent review pass — re-read the diff as a separate reviewer persona, no context carryover from step 1
 3. Run `workflow_run_command code-quality` quality gate check
-4. Call `submit_review_package` with all three summaries and severity counts
+4. Call `submit_review_package` with all three summaries, severity counts, and optional structured coverage evidence when available:
+   - `reviewedFiles`: changed files/hunks actually checked
+   - `skippedFiles`: changed files/hunks intentionally skipped with reasons
+   - `positionValidation`: confirmation that Critical/Major file:line ranges were verified, or that none remained
 
 **Subagent for independent review is optional, not preferred.** Async subagent execution is unreliable in many environments (process exit, 120s timeout). Use inline dual-persona review by default; only delegate to a subagent if the diff is >500 lines and the environment is known-stable.
 

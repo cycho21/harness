@@ -275,6 +275,17 @@ export function runInterviewAmbiguityGate(
   evidence: InterviewAmbiguityScoreEvidence,
 ): { ok: boolean; message: string } {
   if (!evidence || evidence.workflowId !== workflow.id) {
+    writeFieldLogEvent({
+      type: "gate.failed",
+      category: "interview-ambiguity",
+      severity: "blocker",
+      workflow,
+      summary: "Interview ambiguity score missing before interview → plan transition.",
+      expected: "workflow_score_interview records per-dimension clarity scores before planning.",
+      actual: "No score token was present for this workflow.",
+      impact: "Planning could proceed from ambiguous requirements without explicit clarity scoring.",
+      primaryMessage: "Call workflow_score_interview after workflow_interview_wizard completes.",
+    });
     return {
       ok: false,
       message: formatGateBlocked({
@@ -303,6 +314,17 @@ export function runInterviewAmbiguityGate(
   }
 
   const dimensionLines = failing.map(([name, score]) => `${name}: ${score}/100 (threshold: ${INTERVIEW_AMBIGUITY_THRESHOLD})`).join(", ");
+  writeFieldLogEvent({
+    type: "gate.failed",
+    category: "interview-ambiguity",
+    severity: "blocker",
+    workflow,
+    summary: `Interview ambiguity score below threshold: ${dimensionLines}.`,
+    expected: `All interview clarity dimensions are ${INTERVIEW_AMBIGUITY_THRESHOLD} or above before planning.`,
+    actual: dimensionLines,
+    impact: "Planning could encode unclear goals, scope, acceptance criteria, constraints, or context.",
+    primaryMessage: "Run a targeted follow-up interview round and re-score.",
+  });
   return {
     ok: false,
     message: formatGateBlocked({
@@ -974,13 +996,21 @@ const HIGH_RISK_PUSH_PATH_SEGMENTS = new Set([
   "password", "secret", "secrets", "credential", "credentials",
   "token", "tokens", "session", "sessions", "permission", "permissions",
   "security", "crypto", "encryption",
+  "infra", "infrastructure", "terraform", "k8s", "kubernetes",
+  "rbac", "iam", "policy", "policies",
 ]);
 const HIGH_RISK_PUSH_FILENAMES = new Set(["schema.prisma"]);
+const HIGH_RISK_PUSH_FILENAME_PATTERNS = [
+  /^\.env[^/]*$/,
+  /^(docker-)?compose(\..*)?\.ya?ml$/,
+];
 
 function hasHighRiskPushPath(file: string): boolean {
   const segments = file.split("/").map((segment) => segment.toLowerCase()).filter(Boolean);
   const filename = segments[segments.length - 1] ?? "";
-  return HIGH_RISK_PUSH_FILENAMES.has(filename) || segments.some((segment) => HIGH_RISK_PUSH_PATH_SEGMENTS.has(segment));
+  return HIGH_RISK_PUSH_FILENAMES.has(filename)
+    || HIGH_RISK_PUSH_FILENAME_PATTERNS.some((pattern) => pattern.test(filename))
+    || segments.some((segment) => HIGH_RISK_PUSH_PATH_SEGMENTS.has(segment));
 }
 
 export function scanPushPolicy(root: string | null = getGitRoot()): PushPolicyScanResult {
@@ -1014,7 +1044,7 @@ export function scanPushPolicy(root: string | null = getGitRoot()): PushPolicySc
     { category: "DB migration changed (db/migration)", match: ({ file }) => /(^|\/)db\/migration\//.test(file) },
     { category: "Dockerfile changed", match: ({ file }) => /(^|\/)(Dockerfile|.*\.Dockerfile)$/.test(file) },
     { category: "CI config changed", match: ({ file }) => /(^\.github\/workflows\/|^\.gitlab-ci\.ya?ml$|(^|\/)Jenkinsfile$|^azure-pipelines\.ya?ml$|^\.circleci\/|^bitbucket-pipelines\.ya?ml$)/.test(file) },
-    { category: "High-risk path changed (auth/session/security/secret/schema)", match: ({ file }) => hasHighRiskPushPath(file) },
+    { category: "High-risk path changed (auth/session/security/secret/schema/infra/env)", match: ({ file }) => hasHighRiskPushPath(file) },
     { category: "Deleted files", match: ({ status }) => status.includes("D") },
   ];
 

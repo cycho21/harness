@@ -74,6 +74,14 @@ export function parseWorkflowCommand(input: string): WorkflowCommandRequest {
   return { command, rest };
 }
 
+function fieldLogCategoryForGate(gate: string): "dpaa" | "code-quality" | "push-policy" | "interview-ambiguity" | "workspace" {
+  if (gate === "policy-scan") return "push-policy";
+  if (gate === "code-quality") return "code-quality";
+  if (gate === "dpaa") return "dpaa";
+  if (gate === "interview-ambiguity") return "interview-ambiguity";
+  return "workspace";
+}
+
 function formatConditionalProtocolHints(state: WorkflowRuntimeState): string {
   const workflow = state.workflow;
   if (!workflow) return "";
@@ -102,7 +110,7 @@ function formatConditionalProtocolHints(state: WorkflowRuntimeState): string {
   }
 
   const latestActionableFailure = formatLatestActionableFailureHint(20, {
-    activeGateFailures: failedGates.map(([gate]) => gate),
+    activeGateFailures: failedGates.map(([gate]) => fieldLogCategoryForGate(gate)),
   });
   if (latestActionableFailure) hints.push(latestActionableFailure);
 
@@ -606,7 +614,7 @@ pi.registerCommand("workflow", {
       state.gateFailures.delete(gate);
       writeFieldLogEvent({
         type: "gate.skipped",
-        category: gate === "policy-scan" ? "push-policy" : gate === "code-quality" ? "code-quality" : gate === "dpaa" ? "dpaa" : "workspace",
+        category: fieldLogCategoryForGate(gate),
         severity: "warning",
         status: "accepted-risk",
         workflow: state.workflow,

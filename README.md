@@ -283,7 +283,7 @@ git push 위험 변경 재확인
 | `review_approved` | 리뷰 패키지와 품질 gate 통과 | 자동으로 `document` 진행 |
 | `document` | 필요한 문서/feature docs 작성 | 사용자 승인 없이 자동으로 `commit` 준비 가능 |
 | `commit` | diff 요약, 검증 요약, commit message 준비 | 사용자 승인 + policy scan 후 `push` |
-| `push` | 원격 반영 준비 완료 | git push guard 통과 및 성공한 `git push` result 후 `done` 자동 전이 |
+| `push` | 원격 반영 준비 완료 | `workflow_run_command`의 `git-push` 실행 및 성공한 push result 후 `done` 자동 전이 |
 | `done` | workflow 완료 후 active workflow 해제 | 새 workflow 시작 가능 |
 
 ---
@@ -372,7 +372,7 @@ hard guard는 자동 진행 중에도 우회할 수 없습니다.
 | Guard | 위치 | 의미 |
 |---|---|---|
 | DPAA/SBADR | `plan_review → implement` | 사용자 승인창 표시 전 계획 모호성/검증 가능성 검사. `advisory`/`standard`/`strict` 강도를 정합니다. 계획 상단 metadata의 `Ambiguity gate: advisory\|standard\|strict`, `Risk: low\|normal\|high`, `Work type: docs\|feature\|api\|security\|migration` 값을 우선 적용하고, metadata가 없으면 기존 keyword fallback을 사용합니다. docs/cosmetic/discovery/small 작업은 작업 제목 기준으로 advisory가 될 수 있어 FAIL도 advisory로 낮추고 plan 부재도 허용할 수 있습니다. API/schema/security/migration/data/deploy 계열은 metadata나 제목/plan 내용에서 strict로 유지합니다. acceptance는 숫자 metric뿐 아니라 `command exits 0`, `tests pass`, `README updated`, `no blockers/errors` 같은 binary/observable 조건도 검증 가능 조건으로 인정합니다. `WARN`은 advisory로 표시하되 전이는 허용합니다. |
-| Code quality | review package 제출 시 | `codeQualityGuard` 또는 설정된 품질 명령 실행 |
+| Code quality | review package 제출 시 | `codeQualityGuard` 또는 설정된 품질 명령 실행. `submit_review_package`는 선택적으로 `reviewedFiles`, `skippedFiles`, `positionValidation`을 받아 changed-file/hunk coverage와 Critical/Major 위치 검증 evidence를 함께 저장합니다. |
 | Workspace | `git push` | workflow 시작 workspace/branch와 현재 상태 일치 검사 |
 | Push policy scan | `commit → push`, `git push` | 위험 변경 확인 |
 | Push phase | `git push` | 현재 workflow phase가 `push`인지 검사 |
@@ -394,7 +394,7 @@ workflow_skip_gate(gate, reason)
 
 ## Push 정책
 
-`commit → push`로 넘어갈 때 push 의사와 위험 변경을 함께 확인합니다. 이때 tracked staged/modified 변경이 남아 있으면 아직 커밋되지 않은 변경이 push에서 누락될 수 있으므로 `Push blocked: uncommitted changes exist.`로 전환을 차단합니다. untracked 파일은 push 대상이 아니므로 이 guard에서는 차단하지 않습니다. Push policy scan은 build/config/migration/Docker/CI/deletion/large-change뿐 아니라 `auth`, `session`, `security`, `secret`, `token`, `permission`, `schema.prisma` 같은 고위험 경로도 별도 category로 표시합니다.
+`commit → push`로 넘어갈 때 push 의사와 위험 변경을 함께 확인합니다. 이때 tracked staged/modified 변경이 남아 있으면 아직 커밋되지 않은 변경이 push에서 누락될 수 있으므로 `Push blocked: uncommitted changes exist.`로 전환을 차단합니다. untracked 파일은 push 대상이 아니므로 이 guard에서는 차단하지 않습니다. Push policy scan은 build/config/migration/Docker/CI/deletion/large-change뿐 아니라 `auth`, `session`, `security`, `secret`, `token`, `permission`, `schema.prisma`, `.env*`, compose 파일, `infra`, `terraform`, `k8s`, `rbac`, `iam`, `policy` 같은 고위험 경로/파일도 별도 category로 표시합니다.
 
 ```text
 commit → push
@@ -402,7 +402,7 @@ commit → push
   └─ 위험 변경 있으면 policy scan confirmation
 ```
 
-push phase에서는 `workflow_run_command`의 `git-push` catalog command가 `git push`를 실행할 수 있습니다. 이 command는 `push` phase에서만 허용되며 추가 인자를 받지 않아 임의 remote/branch/force push를 방지합니다. 실제 `git push` 시에는 다시 scan합니다.
+push phase에서는 raw shell보다 `workflow_run_command`의 `git-push` catalog command를 우선 사용합니다. 이 command는 `push` phase에서만 허용되며 추가 인자를 받지 않아 임의 remote/branch/force push를 방지합니다. 실제 `git push` 시에는 다시 scan합니다.
 
 ```text
 동일 workspace risk signature → 추가 확인 없이 통과

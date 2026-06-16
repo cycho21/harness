@@ -44,7 +44,7 @@ export function formatPhaseGuidanceForUser(workflow: WorkflowInstance): string {
     case "review_approved": lines.push("리뷰 완료. 문서화 → commit 준비로 자동 진행됩니다."); break;
     case "document":    lines.push("문서화 중. 완료 후 commit 준비로 자동 진행됩니다."); break;
     case "commit":      lines.push("커밋 준비 완료. workflow_approve 로 push 단계로 진입하세요."); break;
-    case "push":        lines.push("Push 준비 완료. git push 를 실행하세요."); break;
+    case "push":        lines.push("Push 준비 완료. workflow_run_command git-push 로 git push 를 실행하세요."); break;
     case "done":        lines.push("✅ 완료됐습니다."); break;
   }
   if (next && workflow.phase !== "done") {
@@ -137,9 +137,9 @@ export function formatWorkflowAction(workflow: WorkflowInstance | null): string 
     case "push":
       lines.push(
         "- Transition mode: guarded execution phase.",
-        "- Required now: run git push immediately in this turn — the extension detects the successful push and auto-advances to done.",
+        "- Required now: run workflow_run_command with commandId 'git-push' immediately in this turn — the extension detects the successful push and auto-advances to done.",
         "- Do NOT call workflow_approve in push phase; it cannot advance push → done and will block.",
-        "- If push execution guard is already satisfied (commit → push approval already recorded), run git push right now without calling workflow_approve again.",
+        "- If push execution guard is already satisfied (commit → push approval already recorded), run workflow_run_command({ commandId: 'git-push' }) right now without calling workflow_approve again.",
       );
       break;
     case "done":

@@ -3,6 +3,15 @@ import { getBranch, getGitRoot } from "../git";
 import { formatWorkflowAction, formatWorkflowPrompt } from "../format";
 import { formatWorkflowReminders, scanWorkflowReminders } from "../reminders";
 import { scanPushPolicy } from "../gates";
+import { formatLatestActionableFailureHint } from "../field-log";
+
+function fieldLogCategoryForGate(gate: string): string {
+  if (gate === "policy-scan") return "push-policy";
+  if (gate === "code-quality") return "code-quality";
+  if (gate === "dpaa") return "dpaa";
+  if (gate === "interview-ambiguity") return "interview-ambiguity";
+  return gate;
+}
 
 export function formatGuardMemoryStatus(state: WorkflowRuntimeState): string {
   const workflowId = state.workflow?.id;
@@ -29,6 +38,10 @@ export function buildWorkflowSystemPromptInjection(state: WorkflowRuntimeState):
   const reviewOk = Boolean(state.codeReviewGuardSatisfiedToken);
   const pushOk = Boolean(state.workflow && state.pushExecutionGuardSatisfiedToken?.workflowId === state.workflow.id);
   const interviewScoreOk = Boolean(state.workflow && state.interviewAmbiguityScoreToken?.workflowId === state.workflow.id);
+  const failedGates = Array.from(state.gateFailures.entries()).filter(([, count]) => count > 0);
+  const latestActionableFailure = formatLatestActionableFailureHint(20, {
+    activeGateFailures: failedGates.map(([gate]) => fieldLogCategoryForGate(gate)),
+  });
   const authLines = [
     "[Workflow Guard Evidence]",
     `Interview ambiguity score evidence: ${interviewScoreOk ? "present" : "absent"}  (required: interview → plan; call workflow_score_interview after wizard)`,
@@ -45,6 +58,7 @@ export function buildWorkflowSystemPromptInjection(state: WorkflowRuntimeState):
     `Branch: ${branch}`,
     formatWorkflowPrompt(state.workflow),
     authLines,
+    ...(latestActionableFailure ? ["", "[Workflow Failure Hint]", latestActionableFailure, "[/Workflow Failure Hint]"] : []),
     formatWorkflowReminders(scanWorkflowReminders(state.workflow, {
       recentVerificationCommands: state.recentVerificationCommands,
       interviewWizardCompleted: Boolean(state.workflow && state.interviewWizardCompletedToken?.workflowId === state.workflow.id),

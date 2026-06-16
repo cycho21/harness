@@ -72,9 +72,9 @@ Use these levels as design guidance for new reminders, tool policy, and recovery
 | High-risk consensus | `plan_review` LLM procedure | Architect/Critic review (assumption FRAGILE rating, pre-mortem, executor perspective) is required for high-risk metadata before requesting implementation approval. Independent layer from DPAA. |
 | DPAA | `plan_review → implement` | Checks the plan and blocks ambiguous implementation. |
 | Code quality | `code_review → review_approved` | Runs `codeQualityGuard` / `HARNESS_CODE_QUALITY_GUARD_CMD`. |
-| Code review | `code_review → review_approved` | `submit_review_package` must include main self-review, independent reviewer/subagent review, quality-gate summary, Critical=0, and Major≤2 before review approval. |
+| Code review | `code_review → review_approved` | `submit_review_package` must include main self-review, independent reviewer/subagent review, quality-gate summary, Critical=0, and Major≤2 before review approval. It may also include reviewed/skipped file coverage and Critical/Major position-validation evidence. |
 | Workspace | `git push` | Blocks wrong git root/branch and `git -C` push bypass. |
-| Policy scan | `commit → push`, rechecked at `git push` | Prompts user for risky build/config/migration/Docker/CI/delete/large-change pushes. The approval is reused if the workspace risk signature is unchanged. |
+| Policy scan | `commit → push`, rechecked at `git push` | Prompts user for risky build/config/migration/Docker/CI/delete/large-change and high-risk auth/security/env/infra pushes. In `push`, prefer the `git-push` catalog command through `workflow_run_command`. The approval is reused if the workspace risk signature is unchanged. |
 | Push execution | `git push` | Requires `push` phase and in-memory push guard. |
 
 One-use gate exceptions exist only for exceptional, user-confirmed cases via `/workflow skip <gate> <reason>`.

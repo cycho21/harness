@@ -51,6 +51,9 @@ export type WorkflowRuntimeState = {
     mainSummary: string;
     reviewerSummary: string;
     qualitySummary: string;
+    reviewedFiles?: string[];
+    skippedFiles?: Array<{ path: string; reason: string }>;
+    positionValidation?: string;
     reviewArtifact?: ArtifactDescriptor;
     reviewArtifactError?: string;
   };
