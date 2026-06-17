@@ -387,6 +387,48 @@ export async function runPreTransitionGate(
   return { ok: true, message: "" };
 }
 
+const MAX_CODE_QUALITY_ATTEMPTS = 2;
+
+type CodeQualityFailureKind = "code-violation" | "coverage-failure" | "environment-error" | "unknown-quality-failure";
+
+type CodeQualityAttempt = {
+  ok: boolean;
+  stdout: string;
+  stderr: string;
+  output: string;
+  status: number | null;
+};
+
+function outputTail(value: string, lines = 80): string {
+  return value.split(/\r?\n/).slice(-lines).join("\n").trim();
+}
+
+function normalizeCodeQualityError(error: unknown): CodeQualityAttempt {
+  const err = error as { stdout?: string; stderr?: string; status?: number; message?: string };
+  const stdout = String(err.stdout ?? "").trim();
+  const stderr = String(err.stderr ?? "").trim();
+  const fallback = stdout || stderr ? "" : String(err.message ?? error ?? "").trim();
+  return {
+    ok: false,
+    stdout,
+    stderr,
+    output: [stdout, stderr, fallback].filter(Boolean).join("\n").trim(),
+    status: typeof err.status === "number" ? err.status : null,
+  };
+}
+
+function classifyCodeQualityFailure(output: string, status: number | null): CodeQualityFailureKind {
+  if (status == null) return "environment-error"; // exit code unknown
+  if (/\b(checkstyle|pmd|spotbugs)\b|\bviolations?\b|\bPMD\b|\bCheckstyle\b/i.test(output)) return "code-violation";
+  if (/\b(jacoco|coverage|coverageGuard)\b/i.test(output)) return "coverage-failure";
+  if (/\b(daemon|lock|timeout|timed out|could not start|unable to start|connection refused|out of memory|java\.io|gradle .*unavailable)\b/i.test(output)) return "environment-error";
+  return "environment-error";
+}
+
+function shouldRetryCodeQualityFailure(kind: CodeQualityFailureKind): boolean {
+  return kind === "environment-error" || kind === "unknown-quality-failure";
+}
+
 export function runCodeQualityGate(workflow: WorkflowInstance): { ok: boolean; message: string } {
   const skip = consumeSkipToken("code-quality");
   if (skip) {
@@ -422,101 +464,124 @@ export function runCodeQualityGate(workflow: WorkflowInstance): { ok: boolean; m
     return { ok: true, message: `Code quality guard skipped: no quality gate configured for ${buildSystem.type} project. Set HARNESS_CODE_QUALITY_GUARD_CMD to enable.` };
   }
 
-  // Resolve display label for messages
+  // Resolve display label and runner for messages.
   const qc = buildSystem.qualityCommand;
   const command = configured ?? `${qc!.executable} ${qc!.args.join(" ")}`;
+  const runAttempt = (): CodeQualityAttempt => {
+    try {
+      if (configured) {
+        // Legacy developer-controlled env var: shell syntax is still supported for compatibility.
+        const stdout = execSync(configured, {
+          cwd: root,
+          encoding: "utf-8",
+          env: { ...process.env, PYTHONIOENCODING: "utf-8" },
+          stdio: "pipe",
+          maxBuffer: 1024 * 1024 * 10,
+        }).trim();
+        return { ok: true, stdout, stderr: "", output: stdout, status: 0 };
+      }
 
-  try {
-    if (configured) {
-      // Developer-controlled env var: allow shell syntax (execSync)
-      execSync(configured, {
-        cwd: root,
-        encoding: "utf-8",
-        env: { ...process.env, PYTHONIOENCODING: "utf-8" },
-        stdio: "pipe",
-        maxBuffer: 1024 * 1024 * 10,
-      });
-    } else {
-      // Build system quality command: use execFileSync (structured argv, no shell interpolation)
-      // Windows: .bat files need cmd /c wrapper
+      // Build system quality command: use execFileSync (structured argv, no shell interpolation).
+      // Windows: .bat files need cmd /c wrapper.
       let exe = qc!.executable;
-      // Disable Gradle build cache so the gate always uses fresh results.
+      // Disable the Gradle daemon and build cache so quality checks use a fresh process/result.
       // --no-build-cache is less aggressive than --rerun-tasks: skips the cache
       // without forcing re-compilation of unchanged sources.
-      let eArgs = buildSystem.type === "gradle" ? [...qc!.args, "--no-build-cache"] : [...qc!.args];
+      let eArgs = buildSystem.type === "gradle" ? [...qc!.args, "--no-daemon", "--no-build-cache"] : [...qc!.args];
       if (process.platform === "win32" && /\.bat$/i.test(exe)) {
         eArgs = ["/c", exe, ...eArgs];
         exe = "cmd.exe";
       }
-      execFileSync(exe, eArgs, {
+      const stdout = execFileSync(exe, eArgs, {
         cwd: root,
         encoding: "utf-8",
         env: { ...process.env, PYTHONIOENCODING: "utf-8" },
         stdio: "pipe",
         maxBuffer: 1024 * 1024 * 10,
-      });
+      }).trim();
+      return { ok: true, stdout, stderr: "", output: stdout, status: 0 };
+    } catch (error) {
+      return normalizeCodeQualityError(error);
     }
-    return { ok: true, message: `Code quality guard satisfied: ${command}` };
-  } catch (error) {
-    const err = error as { stdout?: string; stderr?: string; status?: number };
-    // exit code null = process could not start (tooling/env issue) → treat as skippable, not a code quality failure
-    if (err.status == null) {
-      const envOutput = [err.stdout, err.stderr].filter(Boolean).join("\n").trim();
-      writeFieldLogEvent({
-        type: "gate.failed", category: "code-quality", severity: "warning", workflow,
-        summary: "Code quality gate subprocess could not start (exit code unknown). Treating as tooling error — gate skipped.",
-        expected: "Quality guard process exits with numeric code.",
-        actual: envOutput || "exit code null",
-        impact: "Gate bypassed due to Node.js subprocess environment issue. Run manually to verify.",
-        primaryMessage: envOutput || `${command} — exit code unknown`,
-        command, improvementKind: "doctor-check",
-      });
-      return { ok: true, message: `Code quality guard skipped: subprocess environment error (exit unknown). Run ${command} manually to verify.` };
-    }
-    const output = [err.stdout, err.stderr].filter(Boolean).join("\n").trim();
+  };
 
-    // Diff-aware check: pass if all violations are in pre-existing (unchanged) files
+  const attempts: CodeQualityAttempt[] = [];
+  let classification: CodeQualityFailureKind = "unknown-quality-failure";
+  for (let attempt = 1; attempt <= MAX_CODE_QUALITY_ATTEMPTS; attempt += 1) {
+    const result = runAttempt();
+    if (result.ok) {
+      return { ok: true, message: `Code quality guard satisfied: ${command}${attempt > 1 ? ` (after ${attempt} attempts)` : ""}` };
+    }
+    attempts.push(result);
+    classification = classifyCodeQualityFailure(result.output, result.status);
+    if (attempt < MAX_CODE_QUALITY_ATTEMPTS && shouldRetryCodeQualityFailure(classification)) continue;
+    break;
+  }
+
+  const finalAttempt = attempts[attempts.length - 1] ?? { ok: false, stdout: "", stderr: "", output: "", status: null };
+  const output = finalAttempt.output;
+
+  // Diff-aware check: pass only if concrete code/coverage violations are all pre-existing.
+  if (classification === "code-violation" || classification === "coverage-failure") {
     const diffAware = diffAwareGateCheck(output, root, workflow, command);
     if (diffAware) return diffAware;
-
-    const tail = output.split(/\r?\n/).slice(-80).join("\n");
-    writeFieldLogEvent({
-      type: "gate.failed",
-      category: "code-quality",
-      severity: "blocker",
-      workflow,
-      summary: "Code quality guard failed before review approval.",
-      expected: "Code quality guard exits successfully before code_review → review_approved.",
-      actual: `Command failed: ${command}. Exit: ${err.status ?? "unknown"}`,
-      impact: "Workflow cannot advance to review_approved until quality failures are fixed or explicitly skipped.",
-      primaryMessage: output || `Command failed: ${command}`,
-      exitCode: err.status ?? null,
-      command,
-      logExcerpt: tail,
-      improvementKind: "doctor-check",
-    });
-    return {
-      ok: false,
-      message: [
-        formatGateBlocked({
-          gate: "Code Quality",
-          why: `Mechanical code quality guard failed before code_review → review_approved. codeQualityGuard command: ${command}. Exit: ${err.status ?? "unknown"}`,
-          next: [
-            "Check which task FAILED in the output: codeQualityGuard (Checkstyle/PMD) or coverageGuard (JaCoCo coverage threshold)",
-            "codeQualityGuard failure: fix the reported Checkstyle/PMD violations in source code. Do NOT edit checkstyle.xml, suppressions.xml, or add CHECKSTYLE:OFF — fix the code itself.",
-            "coverageGuard failure: add/fix tests to meet the coverage minimum (check gradle.properties for per-module threshold).",
-            "Re-run the review package / workflow transition after fixes.",
-            `Detected build system: ${buildSystem.type}. If no quality gate is configured, set HARNESS_CODE_QUALITY_GUARD_CMD`,
-          ],
-          skip: "/workflow skip code-quality <reason>",
-        }),
-        "",
-        "Recent output",
-        "──────────────────────────────────────",
-        tail || "(no output)",
-      ].join("\n"),
-    };
   }
+
+  const tail = outputTail(output);
+  const stdoutTail = outputTail(finalAttempt.stdout, 40);
+  const stderrTail = outputTail(finalAttempt.stderr, 40);
+  const summary = classification === "environment-error"
+    ? "Quality guard execution failed before violations could be verified."
+    : "Code quality guard failed before review approval.";
+  writeFieldLogEvent({
+    type: "gate.failed",
+    category: "code-quality",
+    severity: "blocker",
+    workflow,
+    summary,
+    expected: "Code quality guard exits successfully before code_review → review_approved.",
+    actual: `Command failed: ${command}. Classification: ${classification}. Attempts: ${attempts.length}. Exit: ${finalAttempt.status ?? "unknown"}`,
+    impact: classification === "environment-error"
+      ? "Workflow cannot verify Checkstyle/PMD state until the tooling/environment failure is fixed or explicitly skipped."
+      : "Workflow cannot advance to review_approved until quality failures are fixed or explicitly skipped.",
+    primaryMessage: output || `Command failed: ${command}`,
+    exitCode: finalAttempt.status ?? null,
+    command,
+    logExcerpt: tail,
+    improvementKind: "doctor-check",
+  });
+  return {
+    ok: false,
+    message: [
+      formatGateBlocked({
+        gate: "Code Quality",
+        why: `${summary} before code_review → review_approved. Classification: ${classification}. codeQualityGuard command: ${command}. Exit: ${finalAttempt.status ?? "unknown"}. Attempts: ${attempts.length}.`,
+        next: [
+          "Check which task FAILED in the output: codeQualityGuard (Checkstyle/PMD), coverageGuard (JaCoCo coverage threshold), or environment/tooling startup.",
+          "code-violation: fix the reported Checkstyle/PMD violations in source code. Do NOT edit checkstyle.xml, suppressions.xml, or add CHECKSTYLE:OFF — fix the code itself.",
+          "coverage-failure: add/fix tests to meet the coverage minimum (check gradle.properties for per-module threshold).",
+          "environment-error: fix Gradle/JDK/daemon/tooling setup, then rerun the transition. Do not treat this as a pass.",
+          `Detected build system: ${buildSystem.type}. If no quality gate is configured, set HARNESS_CODE_QUALITY_GUARD_CMD`,
+        ],
+        skip: "/workflow skip code-quality <reason>",
+      }),
+      "",
+      `Classification: ${classification}`,
+      `Attempts: ${attempts.length}`,
+      "",
+      "stdout",
+      "──────────────────────────────────────",
+      stdoutTail || "(empty)",
+      "",
+      "stderr",
+      "──────────────────────────────────────",
+      stderrTail || "(empty)",
+      "",
+      "Recent output (combined)",
+      "──────────────────────────────────────",
+      tail || "(no output)",
+    ].join("\n"),
+  };
 }
 
 export function runDpaaGate(workflow: WorkflowInstance, from: WorkflowPhase, to: WorkflowPhase): { ok: boolean; message: string; planSha256?: string } {

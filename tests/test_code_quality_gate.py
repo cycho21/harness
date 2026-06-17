@@ -19,14 +19,14 @@ def test_code_quality_gate_runs_before_review_approved():
     assert "Checkstyle/PMD" in gates  # message content; exact phrasing may vary
 
 
-def test_code_quality_gate_treats_unknown_exit_as_tooling_error():
+def test_code_quality_gate_treats_unknown_exit_as_blocking_environment_error():
     gates = GATES.read_text(encoding="utf-8")
 
-    assert "err.status == null" in gates
+    assert "status == null" in gates
     assert "exit code unknown" in gates
-    assert "Treating as tooling error" in gates
-    assert "Gate bypassed due to Node.js subprocess environment issue" in gates
-    assert "ok: true" in gates
+    assert "environment-error" in gates
+    assert "Quality guard execution failed before violations could be verified" in gates
+    assert "ok: false" in gates
 
 
 def test_code_quality_gate_has_explicit_skip_and_phase_guidance():
@@ -40,13 +40,24 @@ def test_code_quality_gate_has_explicit_skip_and_phase_guidance():
 
 # ── diff-aware gate + --no-build-cache ────────────────────────────────────────
 
-def test_code_quality_gate_uses_no_build_cache_not_rerun_tasks():
+def test_code_quality_gate_uses_no_daemon_and_no_build_cache_not_rerun_tasks():
     gates = GATES.read_text(encoding="utf-8")
+    assert "--no-daemon" in gates
     assert "--no-build-cache" in gates
     # --rerun-tasks must not appear as an actual argument (comment mentions are ok)
     import re
     actual_uses = re.findall(r'["\']--rerun-tasks["\']', gates)
     assert actual_uses == [], f"--rerun-tasks used as argument: {actual_uses}"
+
+
+def test_code_quality_gate_retries_environment_failures_once_and_keeps_violation_failures_single_attempt():
+    gates = GATES.read_text(encoding="utf-8")
+    assert "MAX_CODE_QUALITY_ATTEMPTS = 2" in gates
+    assert "shouldRetryCodeQualityFailure" in gates
+    assert "classifyCodeQualityFailure" in gates
+    assert "attempts" in gates
+    assert "stdoutTail" in gates
+    assert "stderrTail" in gates
 
 
 def test_diff_aware_gate_check_function_exists():

@@ -1159,7 +1159,7 @@ def test_workflow_extension_runtime_blocks_failed_code_quality_guard(tmp_path):
         const path = require('path');
         const { createJiti } = require('jiti');
         process.chdir('target');
-        process.env.HARNESS_CODE_QUALITY_GUARD_CMD = 'node -e "process.exit(7)"';
+        process.env.HARNESS_CODE_QUALITY_GUARD_CMD = 'node -e "console.error(\'gradle daemon unavailable\'); process.exit(7)"';
 
         const pi = { events: {}, commands: {}, tools: {}, on(name, fn) { this.events[name] = fn; }, registerCommand(name, spec) { this.commands[name] = spec; }, registerTool(spec) { this.tools[spec.name] = spec; } };
         const jiti = createJiti(path.resolve('runtime-test.js'), { interopDefault: false });
@@ -1187,8 +1187,51 @@ def test_workflow_extension_runtime_blocks_failed_code_quality_guard(tmp_path):
     joined = "\n".join(data["notifications"]) + "\n" + data["toolResult"]
 
     assert "CODE QUALITY GATE BLOCKED" in joined
-    assert "Mechanical code quality guard failed" in joined
+    assert "Quality guard execution failed before violations could be verified" in joined
+    assert "environment-error" in joined
+    assert "Attempts: 2" in joined
+    assert "stderr" in joined
+    assert "gradle daemon unavailable" in joined
     assert "code_review → review_approved" in joined
+
+
+def test_workflow_extension_runtime_does_not_retry_checkstyle_violation_failures(tmp_path):
+    script = textwrap.dedent(
+        r'''
+        const path = require('path');
+        const { createJiti } = require('jiti');
+        process.chdir('target');
+        process.env.HARNESS_CODE_QUALITY_GUARD_CMD = 'node -e "console.error(\'Checkstyle violations found in src/Main.java\'); process.exit(7)"';
+
+        const pi = { events: {}, commands: {}, tools: {}, on(name, fn) { this.events[name] = fn; }, registerCommand(name, spec) { this.commands[name] = spec; }, registerTool(spec) { this.tools[spec.name] = spec; } };
+        const jiti = createJiti(path.resolve('runtime-test.js'), { interopDefault: false });
+        jiti(path.resolve('.pi/extensions/workflow.ts')).default(pi);
+
+        const notifications = [];
+        const ctx = { hasUI: true, ui: { notify: (text, level) => notifications.push({ text, level }), confirm: async () => true } };
+
+        (async () => {
+          await pi.commands.workflow.handler('start Runtime code quality violation', ctx);
+          await pi.commands.workflow.handler('state code_review', ctx);
+          const result = await pi.tools.submit_review_package.execute('review-fail', {
+            mainReviewSummary: 'Main self-review complete.',
+            reviewerReviewSummary: 'Independent reviewer found no threshold blockers.',
+            qualityGateSummary: 'codeQualityGuard attempted.',
+            critical: 0,
+            major: 0,
+            minor: 0,
+          }, undefined, undefined, ctx);
+          console.log(JSON.stringify({ notifications: notifications.map((item) => item.text), toolResult: result.content[0].text }));
+        })().catch((error) => { console.error(error.stack || String(error)); process.exit(1); });
+        '''
+    )
+    data = _run_node_runtime(script, tmp_path)
+    joined = "\n".join(data["notifications"]) + "\n" + data["toolResult"]
+
+    assert "CODE QUALITY GATE BLOCKED" in joined
+    assert "code-violation" in joined
+    assert "Attempts: 1" in joined
+    assert "Checkstyle violations found" in joined
 
 
 def test_workflow_typo_suggestion_for_near_miss_slash_command(tmp_path):

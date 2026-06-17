@@ -372,7 +372,7 @@ hard guard는 자동 진행 중에도 우회할 수 없습니다.
 | Guard | 위치 | 의미 |
 |---|---|---|
 | DPAA/SBADR | `plan_review → implement` | 사용자 승인창 표시 전 계획 모호성/검증 가능성 검사. `advisory`/`standard`/`strict` 강도를 정합니다. 계획 상단 metadata의 `Ambiguity gate: advisory\|standard\|strict`, `Risk: low\|normal\|high`, `Work type: docs\|feature\|api\|security\|migration` 값을 우선 적용하고, metadata가 없으면 기존 keyword fallback을 사용합니다. docs/cosmetic/discovery/small 작업은 작업 제목 기준으로 advisory가 될 수 있어 FAIL도 advisory로 낮추고 plan 부재도 허용할 수 있습니다. API/schema/security/migration/data/deploy 계열은 metadata나 제목/plan 내용에서 strict로 유지합니다. acceptance는 숫자 metric뿐 아니라 `command exits 0`, `tests pass`, `README updated`, `no blockers/errors` 같은 binary/observable 조건도 검증 가능 조건으로 인정합니다. `WARN`은 advisory로 표시하되 전이는 허용합니다. |
-| Code quality | review package 제출 시 | `codeQualityGuard` 또는 설정된 품질 명령 실행. `submit_review_package`는 선택적으로 `reviewedFiles`, `skippedFiles`, `positionValidation`을 받아 changed-file/hunk coverage와 Critical/Major 위치 검증 evidence를 함께 저장합니다. |
+| Code quality | review package 제출 시 | `codeQualityGuard` 또는 설정된 품질 명령 실행. Gradle 품질 명령은 `execFileSync` argv 실행에 `--no-daemon --no-build-cache`를 붙이고, violation 없는 환경성 실패는 1회 재시도 후 `environment-error`로 차단하며 stdout/stderr tail을 reason에 포함합니다. `submit_review_package`는 선택적으로 `reviewedFiles`, `skippedFiles`, `positionValidation`을 받아 changed-file/hunk coverage와 Critical/Major 위치 검증 evidence를 함께 저장합니다. |
 | Workspace | `git push` | workflow 시작 workspace/branch와 현재 상태 일치 검사 |
 | Push policy scan | `commit → push`, `git push` | 위험 변경 확인 |
 | Push phase | `git push` | 현재 workflow phase가 `push`인지 검사 |
