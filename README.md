@@ -482,10 +482,11 @@ memory component는 별도 저장소를 사용합니다.
   injection-state.json
 ```
 
-현재 MVP 명령:
+현재 MVP 명령/도구:
 
 ```text
 /memory remember <durable project fact or decision>
+memory_remember({ text })   # agent-facing tool: slash command 없이 durable memory 저장
 /memory list
 /memory search <query>
 /memory show <id>
@@ -493,6 +494,7 @@ memory component는 별도 저장소를 사용합니다.
 /memory enable <id>
 /memory delete <id>
 /memory explain
+/memory doctor              # 저장 root, 파일 health, status count, 최근 injection ids/reasons/hash 진단
 /memory stats
 /memory feedback <id> helpful|irrelevant|wrong|stale
 /memory missed <query-or-description>
@@ -501,10 +503,12 @@ memory component는 별도 저장소를 사용합니다.
 원칙:
 
 ```text
+LLM/agent는 명시적 기억 요청이나 재사용 가치가 높은 학습을 memory_remember tool로 저장 가능
+저장 성공 시 memoryId/status/summary/path를 반환
 모든 memory를 매번 주입하지 않음
 관련 top-N만 deterministic하게 주입
 metrics에는 raw prompt가 아니라 hash/id/count 중심으로 기록
-secret-like memory는 저장 거부
+secret-like memory 원문은 저장 거부
 ```
 
 아직 의도적으로 자동화하지 않은 것:
@@ -600,12 +604,14 @@ AGENTS.md
 
 ```text
 /memory remember <text>
+memory_remember({ text })
 /memory list
 /memory search <query>
 /memory show <id>
 /memory disable <id>
 /memory enable <id>
 /memory explain
+/memory doctor
 /memory stats
 /memory feedback <id> helpful|irrelevant|wrong|stale
 /memory missed <description>

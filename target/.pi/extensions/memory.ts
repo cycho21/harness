@@ -7,6 +7,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import { execSync } from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
@@ -39,6 +40,8 @@ type MemoryEntry = {
 };
 
 type MemoryMatch = { entry: MemoryEntry; score: number; matchedReasons: string[]; renderHash: string };
+type SaveMemoryResult = { ok: true; entry: MemoryEntry } | { ok: false; message: string; reason: string };
+type MemoryFileHealth = { label: string; file: string; exists: boolean; ok: boolean; count?: number; error?: string };
 
 const MEMORY_POLICY = [
   "",
@@ -62,10 +65,37 @@ export default function (pi: ExtensionAPI) {
     },
   };
 
+  pi.registerTool({
+    name: "memory_remember",
+    label: "Remember external memory",
+    description: [
+      "Save durable, reusable project memory for future prompts.",
+      "Use for explicit user memory intent or high-value lessons/rules that should persist across sessions.",
+      "Do not use for raw secrets, credentials, one-off transient facts, or unverified guesses.",
+    ].join(" "),
+    parameters: Type.Object({
+      text: Type.String({ description: "Durable memory text to save. Must not contain raw secrets or credentials." }),
+    }),
+    async execute(_toolCallId, params) {
+      const text = String(params.text ?? "").trim();
+      if (!text) {
+        return { content: [{ type: "text", text: "Memory not saved: text is required." }], details: { ok: false } };
+      }
+      const saved = saveMemoryText(text, "memory_remember");
+      if (!saved.ok) {
+        return { content: [{ type: "text", text: saved.message }], details: { ok: false, reason: saved.reason } };
+      }
+      return {
+        content: [{ type: "text", text: formatSavedMemoryToolResult(saved.entry) }],
+        details: { ok: true, memoryId: saved.entry.memoryId, status: saved.entry.status, path: entriesFile() },
+      };
+    },
+  });
+
   pi.registerCommand("memory", {
     description: "Manage external memory used for task-specific LLM context.",
     getArgumentCompletions: (prefix) => [
-      "list", "search", "show", "remember", "disable", "enable", "delete", "explain", "stats", "feedback", "missed",
+      "list", "search", "show", "remember", "disable", "enable", "delete", "explain", "doctor", "stats", "feedback", "missed",
     ].filter((value) => value.startsWith(prefix)).map((value) => ({ value, label: value })),
     handler: async (args, ctx) => {
       const trimmed = args.trim();
@@ -74,16 +104,9 @@ export default function (pi: ExtensionAPI) {
 
       if (command === "remember") {
         if (!body) return ctx.ui.notify("Usage: /memory remember <durable memory text>", "warning");
-        if (mayContainSecret(body)) {
-          appendMetric({ operation: "remember", rejected: "secret-like-input", requestHash: sha256(body) });
-          return ctx.ui.notify("Memory not saved: secret-like text was detected. Redact the secret first, then run /memory remember again.", "warning");
-        }
-        ensureProjectMemoryIgnored();
-        const entry = createMemory(body);
-        appendJsonl(entriesFile(), entry);
-        appendAudit("create", entry.memoryId, { source: "remember" });
-        appendMetric({ operation: "remember", selectedMemoryIds: [entry.memoryId], selectedRenderHashes: [entry.rendering.stableRenderHash] });
-        return ctx.ui.notify(`Memory saved: ${entry.memoryId}\n${renderEntryLine(entry)}`, "info");
+        const saved = saveMemoryText(body, "remember");
+        if (!saved.ok) return ctx.ui.notify(saved.message, "warning");
+        return ctx.ui.notify(`Memory saved: ${saved.entry.memoryId}\n${renderEntryLine(saved.entry)}`, "info");
       }
 
       if (command === "list") {
@@ -150,11 +173,15 @@ export default function (pi: ExtensionAPI) {
         return ctx.ui.notify(formatExplain(state.lastInjection ?? readInjectionState()), "info");
       }
 
+      if (command === "doctor") {
+        return ctx.ui.notify(formatDoctor(), "info");
+      }
+
       if (command === "stats") {
         return ctx.ui.notify(formatStats(), "info");
       }
 
-      return ctx.ui.notify("Usage: /memory list|search|show|remember|disable|enable|delete|explain|stats|feedback|missed", "warning");
+      return ctx.ui.notify("Usage: /memory list|search|show|remember|disable|enable|delete|explain|doctor|stats|feedback|missed", "warning");
     },
   });
 
@@ -191,6 +218,30 @@ function appendJsonl(file: string, value: any): void { ensureProjectMemoryIgnore
 function readJsonl(file: string): any[] { if (!fs.existsSync(file)) return []; return fs.readFileSync(file, "utf-8").split(/\r?\n/).filter(Boolean).map((line) => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean); }
 function writeJson(file: string, value: any): void { ensureDir(file); fs.writeFileSync(file, JSON.stringify(value, null, 2), "utf-8"); }
 function readJson(file: string): any | null { try { return JSON.parse(fs.readFileSync(file, "utf-8")); } catch { return null; } }
+
+function saveMemoryText(text: string, source: string): SaveMemoryResult {
+  const body = normalizeWhitespace(text);
+  if (!body) return { ok: false, message: "Memory not saved: text is required.", reason: "empty-input" };
+  if (mayContainSecret(body)) {
+    appendMetric({ operation: source, rejected: "secret-like-input", requestHash: sha256(body) });
+    return { ok: false, message: "Memory not saved: secret-like text was detected. Redact the secret first, then save memory again.", reason: "secret-like-input" };
+  }
+  ensureProjectMemoryIgnored();
+  const entry = createMemory(body);
+  appendJsonl(entriesFile(), entry);
+  appendAudit("create", entry.memoryId, { source });
+  appendMetric({ operation: source, selectedMemoryIds: [entry.memoryId], selectedRenderHashes: [entry.rendering.stableRenderHash] });
+  return { ok: true, entry };
+}
+
+function formatSavedMemoryToolResult(entry: MemoryEntry): string {
+  return [
+    `Memory saved: ${entry.memoryId}`,
+    `status=${entry.status}`,
+    `summary=${entry.content.summary}`,
+    `path=${entriesFile()}`,
+  ].join("\n");
+}
 
 function ensureProjectMemoryIgnored(): void {
   const root = projectRoot();
@@ -396,6 +447,65 @@ function wasRecentlyInjected(id: string): boolean {
   return injection.selectedMemoryIds?.includes(id) && Date.now() - Date.parse(injection.timestamp) < 10 * 60_000;
 }
 function readInjectionState(): any { return readJson(injectionStateFile()); }
+
+function inspectJsonlFile(label: string, file: string): MemoryFileHealth {
+  if (!fs.existsSync(file)) return { label, file, exists: false, ok: true, count: 0 };
+  try {
+    const lines = fs.readFileSync(file, "utf-8").split(/\r?\n/).filter(Boolean);
+    for (const line of lines) JSON.parse(line);
+    return { label, file, exists: true, ok: true, count: lines.length };
+  } catch (error) {
+    return { label, file, exists: true, ok: false, error: String(error).slice(0, 200) };
+  }
+}
+
+function inspectJsonFile(label: string, file: string): MemoryFileHealth {
+  if (!fs.existsSync(file)) return { label, file, exists: false, ok: true };
+  try {
+    JSON.parse(fs.readFileSync(file, "utf-8"));
+    return { label, file, exists: true, ok: true };
+  } catch (error) {
+    return { label, file, exists: true, ok: false, error: String(error).slice(0, 200) };
+  }
+}
+
+function formatFileHealth(item: MemoryFileHealth): string {
+  const state = item.exists ? (item.ok ? "ok" : "parse-error") : "missing";
+  const count = typeof item.count === "number" ? ` count=${item.count}` : "";
+  const error = item.error ? ` error=${item.error}` : "";
+  return `- ${item.label}: ${state}${count} path=${item.file}${error}`;
+}
+
+function formatDoctor(): string {
+  const entries = readEntries();
+  const countsByStatus = countBy(entries, (entry) => entry.status);
+  const statusSummary = Object.entries(countsByStatus).map(([key, value]) => `${key}=${value}`).join(", ") || "none";
+  const injection = readInjectionState();
+  const recentIds = injection?.selectedMemoryIds ?? [];
+  const recentReasons = Array.from(new Set(recentIds.flatMap((id: string) => injection?.matchedReasons?.[id] ?? [])));
+  const fileHealth = [
+    inspectJsonlFile("entries.jsonl", entriesFile()),
+    inspectJsonlFile("audit.jsonl", auditFile()),
+    inspectJsonlFile("metrics.jsonl", metricsFile()),
+    inspectJsonlFile("feedback.jsonl", feedbackFile()),
+    inspectJsonFile("injection-state.json", injectionStateFile()),
+  ];
+  return [
+    "🩺 Memory doctor",
+    `Project root: ${projectRoot()}`,
+    `Memory dir: ${memoryDir()}`,
+    "File health:",
+    ...fileHealth.map(formatFileHealth),
+    `Entry counts: total=${entries.length}${statusSummary === "none" ? "" : ` (${statusSummary})`}`,
+    entries.length ? "" : "No memory entries saved.",
+    "Recent injection:",
+    `- ids=${recentIds.length ? recentIds.join(",") : "none"}`,
+    `- reasons=${recentReasons.length ? recentReasons.join(",") : "none"}`,
+    `- matched=${recentIds.map((id: string) => `${id}:${(injection?.matchedReasons?.[id] ?? []).join(",") || "unknown"}`).join("; ") || "none"}`,
+    `- Dynamic block hash: ${injection?.dynamicBlockHash ?? "none"}`,
+    `- Request hash: ${injection?.requestHash ?? "none"}`,
+  ].filter((line) => line !== "").join("\n");
+}
 
 function formatStats(): string {
   const entries = readEntries();

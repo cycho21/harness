@@ -89,20 +89,27 @@ Harness failures are logged locally under `.project-memory/harness/events.jsonl`
 
 Guard recovery procedures and the missing approval dialog incident are documented in [`docs/workflow-guard-recovery.md`](docs/workflow-guard-recovery.md). The runtime event flow from `/workflow start` through continuation, guards, review, commit, push, and recovery is summarized in [`docs/workflow-runtime-events.md`](docs/workflow-runtime-events.md). LLM-facing prompt and protocol text that should be pinned by tests is documented in [`docs/workflow-prompt-contracts.md`](docs/workflow-prompt-contracts.md).
 
-External memory is stored separately under `.project-memory/memory/`. It starts as a small, user-governed memory layer: manually remember durable facts, search/list them, disable incorrect entries, and inspect what was injected into the prompt. Retrieval/injection tracking is recorded as ids/hashes/counts rather than raw prompts. The extension also adds `.project-memory/` to `.git/info/exclude` on first write so local memory is not accidentally committed.
+External memory is stored separately under `.project-memory/memory/`. It starts as a small, user-governed memory layer: remember durable facts, search/list them, disable incorrect entries, and inspect what was injected into the prompt. Agents can also save durable memory through the `memory_remember({ text })` tool without requiring the user to type a slash command. Retrieval/injection tracking is recorded as ids/hashes/counts rather than raw prompts. The extension also adds `.project-memory/` to `.git/info/exclude` on first write so local memory is not accidentally committed.
 
-Current MVP commands:
+Current MVP commands/tools:
 
 ```text
 /memory remember <durable project fact or decision>
+memory_remember({ text })   # agent-facing tool that returns memoryId/status/summary/path
 /memory list
 /memory search <query>
+/memory show <id>
+/memory disable <id>
+/memory enable <id>
+/memory delete <id>
 /memory explain
+/memory doctor              # root, file health, status counts, recent injection ids/reasons/hash
 /memory stats
 /memory feedback <id> helpful|irrelevant|wrong|stale
+/memory missed <query-or-description>
 ```
 
-Planned later: candidate extraction, approve/reject workflow, merge/supersede, export, and AGENTS.md promotion. These are intentionally not automatic in the MVP.
+Principles: inject only relevant top-N memories, keep metrics to ids/hashes/counts instead of raw prompts, and reject raw secret-like memory text. Planned later: candidate extraction, approve/reject workflow, merge/supersede, export, and AGENTS.md promotion.
 
 Install only one component when needed:
 
