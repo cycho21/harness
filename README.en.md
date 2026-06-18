@@ -60,7 +60,7 @@ python -m pytest tests/test_workflow_reminders.py tests/test_workflow_run_comman
 
 DPAA dependencies are installed automatically into `.pi/.venv/` the first time the DPAA gate runs. The generated venv is ignored by `.pi/.gitignore`.
 
-SBADR (Score-Based Ambiguity Detector and Resolver, ICSME 2020) is installed alongside DPAA under `.pi/sbadr/`. It detects syntactic ambiguity in English plan documents using Stanford CoreNLP dependency parsing (PP attachment, coordination scope, analytical, noun-phrase stacking). CoreNLP is installed automatically on the first gate run. To install manually:
+SBADR (Score-Based Ambiguity Detector and Resolver, ICSME 2020) is installed alongside DPAA under `.pi/sbadr/`. It detects syntactic ambiguity in English plan documents using Stanford CoreNLP dependency parsing (PP attachment, coordination scope, analytical, noun-phrase stacking). The workflow gate invokes SBADR through `.pi/.venv` with `python -m sbadr.cli analyze ...`. CoreNLP is installed automatically on the first gate run. To install manually:
 
 ```bash
 # macOS/Linux

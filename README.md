@@ -77,7 +77,7 @@ DPAA와 SBADR은 상호 보완적입니다.
 | 대상 | 한/영 플랜 다층 품질 검사 | 영어 플랜 구문 모호성 정밀 분석 |
 | 분석 범위 | structural, referential, temporal, verification 등 | PP attachment, coordination, analytical, noun phrase |
 
-CoreNLP는 별도 설치가 필요합니다 (Java 17+ 필수, ~500 MB). 게이트 실행 시 자동 설치됩니다. 수동 설치:
+CoreNLP는 별도 설치가 필요합니다 (Java 17+ 필수, ~500 MB). 게이트 실행 시 자동 설치됩니다. Workflow gate는 `.pi/.venv`의 `python -m sbadr.cli analyze ...` 경로로 SBADR를 실행합니다. 수동 설치:
 
 ```bash
 # macOS/Linux

@@ -169,3 +169,7 @@ def server_status() -> None:
     else:
         typer.echo(f"❌ CoreNLP server not running")
         raise typer.Exit(1)
+
+
+if __name__ == "__main__":
+    app()
