@@ -2,7 +2,7 @@
 set -eu
 export PYTHONIOENCODING=utf-8
 
-REPO="https://github.com/cycho21/harness.git"
+REPO="https://github.com/chochanyeon/harness.git"
 DEST="$(pwd)"
 REF=""
 SOURCE_SUBDIR="target"
@@ -17,7 +17,7 @@ usage() {
 Usage: init-target-harness.sh [options]
 
 Options:
-  --repo URL          Harness git remote (default: https://github.com/cycho21/harness.git)
+  --repo URL          Harness git remote (default: https://github.com/chochanyeon/harness.git)
   --dest DIR          Project root to initialize (default: current directory)
   --ref REF           Branch or tag to clone
   --source-subdir DIR Template directory inside repo (default: target)

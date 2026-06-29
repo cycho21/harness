@@ -5,7 +5,7 @@ Update upstream-managed harness runtime files in the current project.
 
 [CmdletBinding()]
 param(
-    [string]$Repo = "https://github.com/cycho21/harness.git",
+    [string]$Repo = "https://github.com/chochanyeon/harness.git",
     [string]$Dest = (Get-Location).Path,
     [string]$Ref = "",
     [ValidateSet("all", "workflow", "memory")]

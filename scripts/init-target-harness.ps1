@@ -6,13 +6,13 @@ Initialize harness into the current project directory from the harness git remot
 powershell -ExecutionPolicy Bypass -File .\scripts\init-target-harness.ps1
 
 .EXAMPLE
-powershell -ExecutionPolicy Bypass -File .\scripts\init-target-harness.ps1 https://github.com/cycho21/harness.git -Dest C:\work\my-project -DryRun
+powershell -ExecutionPolicy Bypass -File .\scripts\init-target-harness.ps1 https://github.com/chochanyeon/harness.git -Dest C:\work\my-project -DryRun
 #>
 
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [string]$Repo = "https://github.com/cycho21/harness.git",
+    [string]$Repo = "https://github.com/chochanyeon/harness.git",
 
     [Parameter(Position = 1)]
     [string]$Dest = $(if ($env:HARNESS_DEST) { $env:HARNESS_DEST } else { (Get-Location).Path }),

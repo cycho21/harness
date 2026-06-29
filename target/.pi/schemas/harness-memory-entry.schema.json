@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/cycho21/harness/schemas/harness-memory-entry.schema.json",
+  "$id": "https://github.com/chochanyeon/harness/schemas/harness-memory-entry.schema.json",
   "title": "Harness External Memory Entry",
   "description": "A typed, user-governable long-term memory record for LLM-augmented development. Memory entries are optimized for automatic retrieval, transparent use, and user-controlled correction/deletion.",
   "type": "object",

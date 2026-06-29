@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/cycho21/harness/schemas/harness-field-log-event.schema.json",
+  "$id": "https://github.com/chochanyeon/harness/schemas/harness-field-log-event.schema.json",
   "title": "Harness Field Log Event",
   "description": "Append-only event schema for logs produced inside projects that use the harness. The schema is optimized so an LLM in the harness development repository can analyze recurring failures and implement harness improvements with minimal extra context.",
   "type": "object",

@@ -2,7 +2,7 @@
 set -eu
 export PYTHONIOENCODING=utf-8
 
-REPO="https://github.com/cycho21/harness.git"
+REPO="https://github.com/chochanyeon/harness.git"
 DEST="$(pwd)"
 REF=""
 DRY_RUN=0
@@ -16,7 +16,7 @@ Usage: update-harness.sh [options]
 Updates upstream-managed harness runtime files while preserving project-owned files.
 
 Options:
-  --repo URL   Harness git remote (default: https://github.com/cycho21/harness.git)
+  --repo URL   Harness git remote (default: https://github.com/chochanyeon/harness.git)
   --dest DIR   Project root to update (default: current directory)
   --ref REF    Branch or tag to clone
   --dry-run    Print planned changes without writing files
