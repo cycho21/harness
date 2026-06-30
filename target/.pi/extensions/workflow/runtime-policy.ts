@@ -43,8 +43,9 @@ export function isLikelyMutatingBash(command: string): boolean {
   if (!mentionsRuntimeExtensionPath(command)) return false;
   if (/(^|[;&|]\s*)(rm|mv|cp|touch|mkdir|rmdir|sed\s+-i|perl\s+-pi)\b/.test(command)) return true;
   const stripped = command
-    .replace(/\d*&?>>?\/dev\/(null|zero|stdin|stdout|stderr)/g, "")
-    .replace(/\d*>&\d+/g, "");
+    .replace(/\d*&?>>?\s*\/dev\/(null|zero|stdin|stdout|stderr)\b/g, "")  // handle '> /dev/null' (with whitespace)
+    .replace(/\d*>&\d+/g, "")                                              // strip fd redirects like 2>&1
+    .replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, "");              // strip quoted strings — prevents '>' in grep patterns
   return /(>|>>|\btee\b)/.test(stripped);
 }
 
