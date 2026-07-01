@@ -62,7 +62,8 @@ After editing:
 
 - Implement/fix requests include permission to run the minimum relevant local tests.
 - Prefer narrow tests first: unit → targeted command → smoke.
-- Ask before destructive, slow, network-dependent, or resource-heavy tests.
+- Decide test necessity autonomously: write/run tests when code or behavior changes need regression proof; do not write tests when there is no code/behavior change.
+- Do not ask whether to write or skip tests. Only ask before destructive, slow, network-dependent, or resource-heavy tests.
 - TDD is expected for production code; config/docs/infrastructure changes are exempt.
 - TDD cycle (failing test → implement → verify) is a single work unit: do not pause to ask for approval between writing the test and implementing. Complete the full cycle autonomously.
 - If a TDD gate triggers (untested production class detected, or new production code lacks a test): write the test first without asking. Do not ask the user whether to write a test.

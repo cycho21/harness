@@ -59,7 +59,8 @@ After editing:
 
 - Implement/fix requests include permission to run the minimum relevant local tests.
 - Prefer narrow tests first: unit → targeted command → smoke.
-- Ask before destructive, slow, network-dependent, or resource-heavy tests.
+- Decide test necessity autonomously: write/run tests when code or behavior changes need regression proof; do not write tests when there is no code/behavior change.
+- Do not ask whether to write or skip tests. Only ask before destructive, slow, network-dependent, or resource-heavy tests.
 - TDD is expected for production code; config/docs/infrastructure changes are exempt.
 
 ## Worktrees

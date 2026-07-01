@@ -16,6 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 EXT_DIR = ROOT / "target" / ".pi" / "extensions" / "workflow"
 WORKFLOW_TS = ROOT / "target" / ".pi" / "extensions" / "workflow.ts"
 CODE_REVIEW_SKILL = ROOT / "target" / ".pi" / "skills" / "code-review" / "SKILL.md"
+TDD_SKILL = ROOT / "target" / ".pi" / "skills" / "test-driven-development" / "SKILL.md"
+TARGET_AGENTS = ROOT / "target" / "AGENTS.md"
 
 
 def _skill_src(path: Path) -> str:
@@ -560,6 +562,25 @@ class TestFormatTs:
         assert "workflow_run_command git-push" in src
         assert "workflow_run_command with commandId 'git-push'" in src
         assert "Do NOT call workflow_approve" in src
+
+    def test_implement_guidance_does_not_ask_about_tests_when_no_changes(self):
+        src = _src("format.ts")
+        implement_idx = src.index("If the approved scope is already satisfied")
+        guidance_block = src[implement_idx:implement_idx + 1200]
+        assert "Decide test necessity autonomously" in guidance_block
+        assert "do not ask whether to write or skip tests" in guidance_block
+        assert "state that no new tests are needed" in guidance_block
+
+    def test_target_agents_testing_policy_requires_autonomous_test_decision(self):
+        src = TARGET_AGENTS.read_text(encoding="utf-8")
+        assert "Decide test necessity autonomously" in src
+        assert "Do not ask whether to write or skip tests" in src
+
+    def test_tdd_skill_requires_autonomous_test_decision(self):
+        src = TDD_SKILL.read_text(encoding="utf-8")
+        assert "Autonomous test decision" in src
+        assert "Do not ask the user whether to write or skip tests" in src
+        assert "If no code or behavior changes were made, do not write tests" in src
 
 
 # ---------------------------------------------------------------------------

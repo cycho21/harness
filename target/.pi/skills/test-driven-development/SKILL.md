@@ -11,7 +11,9 @@ Write a failing test before writing the code that makes it pass. For bug fixes, 
 
 This skill is specialized for **Java/Spring Boot** with JUnit5, Mockito, and Spring Test.
 
-**When NOT to use:** Pure configuration changes (application.yml), documentation updates, or static content changes.
+**When NOT to use:** Pure configuration changes (application.yml), documentation updates, static content changes, or work where no code/behavior changes are made.
+
+**Autonomous test decision:** Do not ask the user whether to write or skip tests. If code or behavior changes need regression proof, write the smallest relevant failing test first and continue through RED → GREEN → REFACTOR. If no code or behavior changes were made, do not write tests; state that no new tests are needed and run only useful narrow existing verification.
 
 ## The TDD Cycle
 
