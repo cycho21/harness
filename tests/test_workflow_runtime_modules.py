@@ -118,6 +118,18 @@ def test_epic_pev_task_queue_allows_one_active_task_and_writes_artifact(tmp_path
           id: 'wf-test',
           taskQueue: done,
         }}, {json.dumps(str(tmp_path))});
+        const longText = 'x'.repeat(260);
+        const longQueue = mod.activateWorkflowTask(mod.createWorkflowTaskQueue({{
+          title: `Long queue ${{longText}}`,
+          tasks: [{{
+            id: `long-task-${{longText}}`,
+            title: `Long task ${{longText}}`,
+            scope: `Long scope ${{longText}}`,
+            acceptanceCriteria: [`Long acceptance ${{longText}}`],
+            verification: [`Long verification ${{longText}}`],
+          }}],
+        }}), `long-task-${{longText}}`);
+        const longSummary = mod.formatWorkflowTaskQueueSummary(longQueue);
 
         console.log(JSON.stringify({{
           activeCount: secondActive.tasks.filter((task) => task.status === 'active').length,
@@ -126,6 +138,8 @@ def test_epic_pev_task_queue_allows_one_active_task_and_writes_artifact(tmp_path
           artifactExists: fs.existsSync(artifact.path),
           artifactWorkflowId: JSON.parse(fs.readFileSync(artifact.path, 'utf-8')).workflowId,
           summary,
+          longSummary,
+          longSummaryMaxLineLength: Math.max(...longSummary.split('\n').map((line) => line.length)),
         }}));
         '''
     )
@@ -138,6 +152,11 @@ def test_epic_pev_task_queue_allows_one_active_task_and_writes_artifact(tmp_path
     assert data["artifactWorkflowId"] == "wf-test"
     assert "Epic queue" in data["summary"]
     assert "Second task" in data["summary"]
+    assert "Implement second slice" in data["summary"]
+    assert "second accepted" in data["summary"]
+    assert "second verified" in data["summary"]
+    assert data["longSummaryMaxLineLength"] <= 170
+    assert "…" in data["longSummary"]
 
 
 def test_field_log_actionable_hint_ignores_optional_corenlp_noise(tmp_path):

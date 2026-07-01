@@ -563,13 +563,30 @@ class TestFormatTs:
         assert "workflow_run_command with commandId 'git-push'" in src
         assert "Do NOT call workflow_approve" in src
 
-    def test_implement_guidance_does_not_ask_about_tests_when_no_changes(self):
+    def _implement_action_guidance(self) -> str:
         src = _src("format.ts")
-        implement_idx = src.index("If the approved scope is already satisfied")
-        guidance_block = src[implement_idx:implement_idx + 1200]
+        start = src.index("If the approved scope is already satisfied")
+        end = src.index('case "code_review"', start)
+        return src[start:end]
+
+    def test_implement_guidance_does_not_ask_about_tests_when_no_changes(self):
+        guidance_block = self._implement_action_guidance()
         assert "Decide test necessity autonomously" in guidance_block
         assert "do not ask whether to write or skip tests" in guidance_block
         assert "state that no new tests are needed" in guidance_block
+
+    def test_implement_guidance_includes_autonomous_task_execution_policy(self):
+        guidance_block = self._implement_action_guidance()
+        for token in [
+            "Autonomous task execution policy",
+            "Goal lock",
+            "Next action policy",
+            "Failure escape",
+            "Completion/switch rule",
+            "Test decision matrix",
+            "scope drift",
+        ]:
+            assert token in guidance_block
 
     def test_target_agents_testing_policy_requires_autonomous_test_decision(self):
         src = TARGET_AGENTS.read_text(encoding="utf-8")

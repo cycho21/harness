@@ -89,11 +89,34 @@ export function formatWorkflowTaskQueueSummary(queue?: WorkflowTaskQueue | null)
   const nextPending = queue.tasks.find((task) => task.status === "pending") ?? null;
   return [
     "[Epic PEV Queue]",
-    `- Queue: ${queue.title}`,
+    `- Queue: ${truncate(queue.title, 120)}`,
     `- Progress: ${counts}`,
-    active ? `- Active task: ${active.id} — ${active.title}` : "- Active task: none",
-    nextPending ? `- Next pending task: ${nextPending.id} — ${nextPending.title}` : "- Next pending task: none",
+    active ? `- Active task: ${formatTaskLabel(active)}` : "- Active task: none",
+    ...(active ? formatActiveTaskExecutionCues(active) : []),
+    nextPending ? `- Next pending task: ${formatTaskLabel(nextPending)}` : "- Next pending task: none",
   ].join("\n");
+}
+
+function formatTaskLabel(task: WorkflowTaskItem): string {
+  return truncate(`${task.id} — ${task.title}`, 140);
+}
+
+function formatActiveTaskExecutionCues(task: WorkflowTaskItem): string[] {
+  return [
+    `- Active scope: ${truncate(task.scope, 120)}`,
+    `- Active acceptance: ${formatListPreview(task.acceptanceCriteria)}`,
+    `- Active verification: ${formatListPreview(task.verification)}`,
+  ];
+}
+
+function formatListPreview(values: string[]): string {
+  if (values.length === 0) return "not specified";
+  const preview = values.slice(0, 2).map((value) => truncate(value, 60)).join("; ");
+  return values.length > 2 ? `${preview}; +${values.length - 2} more` : preview;
+}
+
+function truncate(value: string, maxLength: number): string {
+  return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}…`;
 }
 
 export function writeWorkflowTaskQueueArtifact(
