@@ -318,7 +318,7 @@ pi.registerCommand("workflow", {
           formatWorkflowAction(wf),
           "",
           "Rules:",
-          "- Call workflow_interview_wizard first. Generate 5 baseline questions tailored to the workflow goal (scope · motivation · acceptance criteria · affected files/modules · constraints/risks). The initial wizard round automatically appends a clarity checkpoint; it does not prepend a work-map/topology question. Later low-score follow-ups should pass round: 'follow_up' so only targeted questions are asked.",
+          "- Call workflow_interview_wizard first. Generate 5 baseline questions tailored to the workflow goal (scope · motivation · acceptance criteria · affected files/modules · constraints/risks). The wizard displays exactly those baseline questions, with no runtime-added topology/work-map or clarity checkpoint questions. If topology or clarity questions are useful, include them directly in the baseline. Later low-score follow-ups should pass round: 'follow_up' so only targeted questions are asked.",
           "- After the wizard returns answers, treat the baseline scope and affected-files/modules answers as required spec/plan coverage and ask focused follow-up questions for the weakest remaining clarity dimension.",
           "- For brownfield work, inspect narrow repo evidence before asking direction questions about codebase facts.",
           "- Do not advance to plan until requirements are sufficiently understood and no clarity dimension remains low unless the user accepts the risk.",

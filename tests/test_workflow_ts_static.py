@@ -313,15 +313,16 @@ class TestPlanMetadataDocs:
 
 
 class TestDeepInterviewLiteWizard:
-    def test_workflow_tool_appends_clarity_without_topology_prepend(self):
+    def test_workflow_tool_uses_baseline_without_automatic_scaffold(self):
         src = _workflow_src()
         assert "buildDeepInterviewLiteQuestions" in src
         assert "round_0_topology" not in src
         assert "buildTopologyQuestion" not in src
-        assert "clarity_checkpoint" in src
+        assert "clarity_checkpoint" not in src
+        assert "buildClarityQuestion" not in src
         assert "deep-interview-lite" in src
         assert "round: 'follow_up'" in src
-        assert "does not prepend a work-map/topology question" in src
+        assert "adds no automatic scaffold questions" in src
 
     def test_interview_choice_contract_supports_optional_recommendation_fields(self):
         workflow_src = _workflow_src()
@@ -343,10 +344,10 @@ class TestDeepInterviewLiteWizard:
         assert "advisory" in combined
         assert "source of truth" in combined
 
-    def test_workflow_start_prompt_mentions_deep_interview_lite_followups(self):
+    def test_workflow_start_prompt_mentions_no_automatic_scaffold(self):
         src = _src("application/workflow-command-router.ts")
-        assert "does not prepend a work-map/topology question" in src
-        assert "clarity checkpoint" in src
+        assert "displays exactly those baseline questions" in src
+        assert "no runtime-added topology/work-map or clarity checkpoint questions" in src
         assert "weakest remaining clarity dimension" in src
         assert "inspect narrow repo evidence" in src
 

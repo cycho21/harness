@@ -588,7 +588,7 @@ def test_workflow_extension_runtime_auto_advances_low_risk_phase_boundaries(tmp_
     assert "Workflow 전이: review_approved → document → commit" in joined
 
 
-def test_workflow_extension_runtime_interview_wizard_appends_clarity_without_prepending_topology(tmp_path):
+def test_workflow_extension_runtime_interview_wizard_uses_baseline_without_automatic_scaffold(tmp_path):
     script = textwrap.dedent(
         r'''
         const path = require('path');
@@ -649,13 +649,15 @@ def test_workflow_extension_runtime_interview_wizard_appends_clarity_without_pre
     )
     data = _run_node_runtime(script, tmp_path)
 
-    assert data["ids"] == ["scope", "motivation", "acceptance", "modules", "constraints", "clarity_checkpoint"]
+    assert data["ids"] == ["scope", "motivation", "acceptance", "modules", "constraints"]
     assert "round_0_topology" not in data["ids"]
+    assert "clarity_checkpoint" not in data["ids"]
     assert data["first"]["id"] == "scope"
+    assert data["last"]["id"] == "constraints"
     assert data["first"]["allowFreeText"] is True
     assert data["first"]["allowSkip"] is False
     assert data["last"]["allowFreeText"] is True
-    assert data["last"]["allowSkip"] is True
+    assert data["last"]["allowSkip"] is False
     assert data["ok"] is True
     assert data["mode"] == "deep-interview-lite"
     assert "weakest clarity dimension" in data["text"]

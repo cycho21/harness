@@ -109,9 +109,9 @@ Example:
 
 ### 1.3 Scope Coverage — No Mandatory Topology-First Question
 
-Do not always start the interview with a separate topology/work-map question. The default wizard already asks baseline questions for scope and affected files/modules; use those answers as the first source of scope coverage.
+Do not always start the interview with a separate topology/work-map question. The runtime does not add automatic topology/work-map or clarity checkpoint questions. The default wizard asks only the baseline questions supplied by the LLM; use the scope and affected files/modules answers as the first source of coverage.
 
-Ask a separate topology confirmation question only when the baseline answers show multiple independently shippable components, unclear included/excluded/deferred areas, or a high risk of missing a major surface. When needed, keep it targeted:
+Ask a separate topology or clarity confirmation question only when the task needs it. Put that question directly in the LLM-supplied baseline or follow-up list. Use a separate topology question when the baseline answers show multiple independently shippable components, unclear included/excluded/deferred areas, or a high risk of missing a major surface. When needed, keep it targeted:
 
 ```text
 범위 확인이 하나 필요합니다.
